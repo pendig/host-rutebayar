@@ -907,9 +907,9 @@ const dashboardHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>host-rutebayar self-hosted</title>
 	<style>
-		body { font-family: Arial, sans-serif; margin: 0; color: #11293f; background: radial-gradient(circle at 12% 0%, #eef3ff 0, #e8f2ff 36%, #f5f7ff 100%); }
+		body { font-family: "Segoe UI", Tahoma, sans-serif; margin: 0; color: #11293f; background: radial-gradient(circle at 12% 0%, #eef3ff 0, #e8f2ff 36%, #f5f7ff 100%); }
 		a { color: #114b8a; }
-		h1, h2, h3 { margin-top: 0; }
+		h1, h2, h3 { margin-top: 0; font-family: Georgia, "Times New Roman", serif; letter-spacing: -0.02em; }
 		.section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 10px 26px rgba(28, 46, 74, 0.08); }
 		table { border-collapse: collapse; width: 100%; margin-top: 8px; }
 		th, td { border: 1px solid #cfdee6; padding: 8px; text-align: left; vertical-align: top; }
@@ -925,6 +925,20 @@ const dashboardHTML = `<!doctype html>
 		.content { padding: 16px 20px 24px 20px; overflow-x: auto; }
 		.top-actions { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 		.subtle { color: #6f7f95; font-size: 14px; }
+		.eyebrow { margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; color: #5a6b86; font-weight: 700; }
+		.hero { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; padding: 24px; margin-bottom: 18px; border-radius: 18px; background: linear-gradient(135deg, rgba(19, 52, 95, 0.96), rgba(34, 92, 159, 0.92)); color: #eff5ff; box-shadow: 0 20px 34px rgba(16, 34, 59, 0.2); }
+		.hero h1 { margin-bottom: 10px; color: #fff; font-size: 32px; }
+		.hero .subtle { color: rgba(239, 245, 255, 0.82); max-width: 760px; }
+		.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+		.button-link, .ghost-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border-radius: 10px; text-decoration: none; font-weight: 700; }
+		.button-link { background: #fff; color: #14335a; box-shadow: 0 8px 18px rgba(7, 21, 39, 0.18); }
+		.ghost-link { color: #eff5ff; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.08); }
+		.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 0 0 18px 0; }
+		.stat { padding: 16px; border-radius: 16px; background: #fff; border: 1px solid #d5e0ec; box-shadow: 0 10px 26px rgba(28, 46, 74, 0.06); }
+		.stat strong { display: block; font-size: 28px; line-height: 1; margin-top: 8px; color: #16385f; }
+		.stat span { color: #5d6d84; font-size: 13px; }
+		.table-wrap { overflow-x: auto; margin-top: 8px; border-radius: 10px; }
+		.pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; background: #edf4ff; color: #204b83; font-size: 12px; font-weight: 700; }
 		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
 		input, textarea, select, button { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; border-radius: 8px; border: 1px solid #bfd0dd; }
 		textarea { min-height: 72px; font-family: monospace; }
@@ -939,6 +953,8 @@ const dashboardHTML = `<!doctype html>
 			.sidebar { position: static; height: auto; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 			.sidebar nav { width: 100%; display: flex; flex-wrap: wrap; }
 			.sidebar nav a { padding: 8px 12px; }
+			.hero { flex-direction: column; }
+			.hero-actions { justify-content: flex-start; }
 		}
 	</style>
 	<script>
@@ -1108,7 +1124,7 @@ const dashboardHTML = `<!doctype html>
 					env: document.getElementById("test-env").value.trim() || "sandbox",
 				};
 				const response = await postJSON("/admin/test-payment", payload);
-					const message = "Reference: " + response.reference + "\\nCheckout: " + response.checkout_url;
+				const message = "Reference: " + response.reference + "\nCheckout: " + response.checkout_url;
 				document.getElementById("test-output").textContent = message;
 				showMessage("Test payment berhasil dibuat.", true);
 			} catch (err) {
@@ -1139,15 +1155,41 @@ const dashboardHTML = `<!doctype html>
 			<p class="muted">Akses jalur ini untuk operasional lokal dan pemantauan checkout.</p>
 		</aside>
 		<main class="content">
-			<div class="top-actions">
-				<h1>host-rutebayar self-hosted</h1>
+			<div class="hero">
+				<div>
+					<p class="eyebrow">Operator workspace</p>
+					<h1>host-rutebayar self-hosted</h1>
+					<p class="subtle">Satu panel untuk registrasi host, produk, provider account, policy, dan smoke test tanpa harus pindah-pindah halaman.</p>
+				</div>
+				<div class="hero-actions">
+					<a class="button-link" href="/ui/callbacks">Lihat callback monitor</a>
+					<a class="ghost-link" href="#orders">Loncat ke orders</a>
+				</div>
 			</div>
-			<p class="subtle">Akses UI lokal dari browser untuk registrasi host, produk, provider account, policy, serta smoke test.</p>
+			<div class="stats">
+				<div class="stat">
+					<span>Hosts aktif</span>
+					<strong>{{len .Hosts}}</strong>
+				</div>
+				<div class="stat">
+					<span>Products</span>
+					<strong>{{len .Products}}</strong>
+				</div>
+				<div class="stat">
+					<span>Orders</span>
+					<strong>{{len .Orders}}</strong>
+				</div>
+				<div class="stat">
+					<span>Fast path</span>
+					<strong><span class="pill">Seed + Test</span></strong>
+				</div>
+			</div>
 			<div id="action-result" class="msg"></div>
 			<div class="section">
 				<h2>1) Quick bootstrap</h2>
+				<p class="subtle">Buat data demo sekali klik untuk cek alur end-to-end dengan cepat.</p>
 				<button type="button" onclick="seedDemo(event)" class="small-btn">Seed demo data</button>
-				<pre id="seed-output"></pre>
+				<div class="table-wrap"><pre id="seed-output"></pre></div>
 			</div>
 			<div class="grid">
 				<section class="section">
@@ -1286,6 +1328,7 @@ const dashboardHTML = `<!doctype html>
 			</div>
 			<div class="section">
 				<h2>6) Test Payment</h2>
+				<p class="subtle">Pilih host dan product yang matching supaya payload test tidak nyasar.</p>
 				<form onsubmit="createTestPayment(event)">
 					<div class="grid">
 						<label>Host
@@ -1309,63 +1352,69 @@ const dashboardHTML = `<!doctype html>
 					</div>
 					<button type="submit">Create test payment</button>
 				</form>
-				<pre id="test-output"></pre>
+				<div class="table-wrap"><pre id="test-output"></pre></div>
 			</div>
 			<div id="hosts" class="section">
 				<h2>Hosts</h2>
-				<table>
-					<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
-					{{range .Hosts}}
-					<tr>
-						<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
-						<td>{{.Name}}</td>
-						<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
-						<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
-					</tr>
-					{{else}}
-					<tr><td colspan="4">Belum ada host terdaftar.</td></tr>
-					{{end}}
-				</table>
+				<div class="table-wrap">
+					<table>
+						<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
+						{{range .Hosts}}
+						<tr>
+							<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
+							<td>{{.Name}}</td>
+							<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
+							<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
+						</tr>
+						{{else}}
+						<tr><td colspan="4">Belum ada host terdaftar.</td></tr>
+						{{end}}
+					</table>
+				</div>
 			</div>
 			<div id="products" class="section">
 				<h2>Products</h2>
-				<table>
-					<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
-					{{range .Products}}
-					<tr>
-						<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
-						<td>{{.HostID}}</td>
-						<td>{{.Name}}</td>
-						<td>{{.SKU}}</td>
-						<td>{{.Price}}</td>
-						<td>{{.IsActive}}</td>
-						<td>{{if .FeePolicyOverride}}yes{{else}}no{{end}}</td>
-					</tr>
-					{{else}}
-					<tr><td colspan="7">Belum ada produk terdaftar.</td></tr>
-					{{end}}
-				</table>
+				<div class="table-wrap">
+					<table>
+						<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
+						{{range .Products}}
+						<tr>
+							<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
+							<td>{{.HostID}}</td>
+							<td>{{.Name}}</td>
+							<td>{{.SKU}}</td>
+							<td>{{.Price}}</td>
+							<td>{{.IsActive}}</td>
+							<td>{{if .FeePolicyOverride}}yes{{else}}no{{end}}</td>
+						</tr>
+						{{else}}
+						<tr><td colspan="7">Belum ada produk terdaftar.</td></tr>
+						{{end}}
+					</table>
+				</div>
 			</div>
 			<div id="orders" class="section">
 				<h2>Orders</h2>
-				<table>
-					<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
-					{{range .Orders}}
-					<tr>
-						<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
-						<td>{{.Status}}</td>
-						<td>{{.HostID}}</td>
-						<td>{{.ProductID}}</td>
-						<td>{{.Provider}}</td>
-						<td>{{.GrossAmount}}</td>
-						<td>{{.HostFeeAmount}}</td>
-						<td>{{.NetAmount}}</td>
-						<td><a href="{{.ProviderCheckoutURL}}">{{if .ProviderCheckoutURL}}open{{else}}-{{end}}</a></td>
-					</tr>
-					{{else}}
-					<tr><td colspan="9">Belum ada order.</td></tr>
-					{{end}}
-				</table>
+				<div class="table-wrap">
+					<table>
+						<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
+						{{range .Orders}}
+						<tr>
+							<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
+							<td>{{.Status}}</td>
+							<td>{{.HostID}}</td>
+							<td>{{.ProductID}}</td>
+							<td>{{.Provider}}</td>
+							<td>{{.GrossAmount}}</td>
+							<td>{{.HostFeeAmount}}</td>
+							<td>{{.NetAmount}}</td>
+							<td><a href="{{.ProviderCheckoutURL}}">{{if .ProviderCheckoutURL}}open{{else}}-{{end}}</a></td>
+						</tr>
+						{{else}}
+						<tr><td colspan="9">Belum ada order.</td></tr>
+						{{end}}
+					</table>
+				</div>
 			</div>
 		</main>
 	</div>
@@ -1556,7 +1605,7 @@ const uiCallbacksHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>Callback monitor</title>
 	<style>
-		body { font-family: Arial, sans-serif; margin: 0; color: #11293f; background: #f2f8ff; }
+		body { font-family: "Segoe UI", Tahoma, sans-serif; margin: 0; color: #11293f; background: #f2f8ff; }
 		.admin-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
 		.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 20px; background: linear-gradient(160deg, #13345f, #183e73); color: #ecf3ff; }
 		.sidebar h2 { margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.3px; }
@@ -1566,6 +1615,15 @@ const uiCallbacksHTML = `<!doctype html>
 		.sidebar .active { background: rgba(255, 255, 255, 0.2); font-weight: 700; }
 		.sidebar .muted { margin-top: 12px; opacity: 0.85; font-size: 12px; }
 		.content { padding: 16px 20px; overflow-x: auto; }
+		.eyebrow { margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; color: rgba(239, 245, 255, 0.72); font-weight: 700; }
+		.hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; padding: 24px; border-radius: 18px; background: linear-gradient(135deg, rgba(19, 52, 95, 0.96), rgba(34, 92, 159, 0.92)); color: #eff5ff; box-shadow: 0 20px 34px rgba(16, 34, 59, 0.2); }
+		.hero h1 { margin: 0 0 8px 0; font-family: Georgia, "Times New Roman", serif; letter-spacing: -0.02em; color: #fff; }
+		.hero .subtle { color: rgba(239, 245, 255, 0.82); max-width: 820px; }
+		.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+		.button-link, .ghost-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border-radius: 10px; text-decoration: none; font-weight: 700; }
+		.button-link { background: #fff; color: #14335a; }
+		.ghost-link { color: #eff5ff; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.08); }
+		.table-wrap { overflow-x: auto; margin-top: 12px; border-radius: 10px; }
 		table { border-collapse: collapse; width: 100%; }
 		td, th { border: 1px solid #c8d7e4; padding: 8px; text-align: left; vertical-align: top; }
 		th { background: #12345c; color: #fff; }
@@ -1582,10 +1640,13 @@ const uiCallbacksHTML = `<!doctype html>
 			.sidebar { position: static; height: auto; }
 			.sidebar nav { flex-direction: row; flex-wrap: wrap; }
 			.sidebar nav a { padding: 8px 12px; }
+			.hero { flex-direction: column; }
+			.hero-actions { justify-content: flex-start; }
 		}
 	</style>
 	<script>
-		async function replay(reference, provider, status, idempotencyKey, buttonRef) {
+		async function replayFromButton(buttonRef) {
+			const { reference, provider, status, idempotencyKey } = buttonRef.dataset;
 			if (!reference || !provider || !status || !idempotencyKey) {
 				alert("reference, provider, status, dan idempotency_key wajib ada.");
 				return;
@@ -1637,31 +1698,49 @@ const uiCallbacksHTML = `<!doctype html>
 			<p class="muted">Monitor untuk delivery callback dan replay event.</p>
 		</aside>
 		<main class="content">
+			<div class="hero">
+				<div>
+					<p class="eyebrow">Operations</p>
+					<h1>Callback delivery monitor</h1>
+					<p class="subtle">Pantau callback, lihat status delivery, dan replay event untuk investigasi. Gunakan panel ini untuk debugging alur webhook secara cepat.</p>
+				</div>
+				<div class="hero-actions">
+					<a class="button-link" href="/ui">Kembali ke dashboard</a>
+					<a class="ghost-link" href="#deliveries">Loncat ke daftar</a>
+				</div>
+			</div>
 			<div class="section">
-				<h1>Callback delivery monitor</h1>
-				<table>
-					<tr><th>At</th><th>Reference</th><th>Provider</th><th>Status</th><th>Result</th><th>Idempotency</th><th>Attempts</th><th>Error</th><th>Action</th></tr>
-					{{range .Deliveries}}
-					<tr>
-						<td>{{.At}}</td>
-						<td>{{.Reference}}</td>
-						<td>{{.Provider}}</td>
-						<td>{{.Status}}</td>
-						<td class="{{if eq .Result "failed"}}bad{{else}}ok{{end}}">{{.Result}}</td>
-						<td>{{.IdempotencyKey}}</td>
-						<td>{{.Attempts}}</td>
-						<td class="row-result">{{.Error}}</td>
-						<td>
-							<button
-								onclick="replay('{{.Reference}}', '{{.Provider}}', '{{.Status}}', '{{.IdempotencyKey}}', this)"
-								{{if or (eq .Reference "") (eq .Provider "") (eq .Status "") (eq .IdempotencyKey "")}}disabled{{end}}
-							>Replay</button>
-						</td>
-					</tr>
-					{{else}}
-					<tr><td colspan="9">Belum ada callback masuk.</td></tr>
-					{{end}}
-				</table>
+				<p class="subtle">Jumlah delivery tersimpan: <strong>{{len .Deliveries}}</strong></p>
+				<div id="deliveries" class="table-wrap">
+					<table>
+						<tr><th>At</th><th>Reference</th><th>Provider</th><th>Status</th><th>Result</th><th>Idempotency</th><th>Attempts</th><th>Error</th><th>Action</th></tr>
+						{{range .Deliveries}}
+						<tr>
+							<td>{{.At}}</td>
+							<td>{{.Reference}}</td>
+							<td>{{.Provider}}</td>
+							<td>{{.Status}}</td>
+							<td class="{{if eq .Result "failed"}}bad{{else}}ok{{end}}">{{.Result}}</td>
+							<td>{{.IdempotencyKey}}</td>
+							<td>{{.Attempts}}</td>
+							<td class="row-result">{{.Error}}</td>
+							<td>
+								<button
+									type="button"
+									data-reference="{{.Reference}}"
+									data-provider="{{.Provider}}"
+									data-status="{{.Status}}"
+									data-idempotency-key="{{.IdempotencyKey}}"
+									onclick="replayFromButton(this)"
+									{{if or (eq .Reference "") (eq .Provider "") (eq .Status "") (eq .IdempotencyKey "")}}disabled{{end}}
+								>Replay</button>
+							</td>
+						</tr>
+						{{else}}
+						<tr><td colspan="9">Belum ada callback masuk.</td></tr>
+						{{end}}
+					</table>
+				</div>
 			</div>
 		</main>
 	</div>
