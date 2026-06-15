@@ -144,6 +144,10 @@ func (s *Orchestrator) CreatePayment(in CreateInput) (CreateOutput, error) {
 		s.metrics.Inc("payments.create.error.product_invalid")
 		return CreateOutput{}, fmt.Errorf("invalid product: %w", err)
 	}
+	if !product.IsActive {
+		s.metrics.Inc("payments.create.error.product_inactive")
+		return CreateOutput{}, errors.New("product is inactive")
+	}
 	if product.HostID != host.ID {
 		s.metrics.Inc("payments.create.error.product_mismatch")
 		return CreateOutput{}, errors.New("product does not belong to host")

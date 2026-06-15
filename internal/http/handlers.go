@@ -281,6 +281,12 @@ func handleRegisterHost(w http.ResponseWriter, r *http.Request, orchestrator *or
 		HostSecret:        req.HostSecret,
 		WebhookSecret:     req.WebhookSecret,
 	}
+	if _, err := orchestrator.GetHost(req.ID); err == nil {
+		if err := authorizeHostSecret(r, orchestrator, req.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
 	if err := orchestrator.RegisterHost(host); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
