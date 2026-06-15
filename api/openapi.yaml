@@ -11,157 +11,6 @@ components:
       type: apiKey
       in: header
       name: X-Host-Secret
-security:
-  - apiKey: []
-paths:
-  /payments:
-    post:
-      summary: Create payment order (local orchestration path)
-      security:
-        - apiKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreatePaymentRequest'
-      responses:
-        '200':
-          description: Payment intent created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreatePaymentResponse'
-  /payments/{reference}:
-    get:
-      summary: Get payment status
-      parameters:
-        - in: path
-          name: reference
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Payment status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentStatus'
-  /webhooks/{provider}:
-    post:
-      summary: Receive provider webhook
-      parameters:
-        - in: path
-          name: provider
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WebhookPayload'
-      responses:
-        '200':
-          description: Webhook accepted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookResponse'
-  /register/host:
-    post:
-      summary: Register host profile
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterHostRequest'
-      responses:
-        '201':
-          description: Host registered
-  /register/product:
-    post:
-      summary: Register host product
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterProductRequest'
-      responses:
-        '201':
-          description: Product registered
-  /register/provider-account:
-    post:
-      summary: Register gateway credential mapping per host
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterProviderAccountRequest'
-      responses:
-        '201':
-          description: Provider account registered
-  /register/host-policy:
-    post:
-      summary: Register host fee policy
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterHostPolicyRequest'
-      responses:
-        '201':
-          description: Host policy registered
-  /host/{host_id}/payments:
-    post:
-      summary: Create payment via host-scoped proxy to rute-bayar contract
-      parameters:
-        - in: path
-          name: host_id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreatePaymentRequest'
-      responses:
-        '200':
-          description: Payment intent created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreatePaymentResponse'
-  /host/{host_id}/payments/{reference}:
-    get:
-      summary: Get payment status via host-scoped proxy
-      parameters:
-        - in: path
-          name: host_id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: reference
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Payment status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentStatus'
-components:
   schemas:
     CreatePaymentRequest:
       type: object
@@ -337,3 +186,153 @@ components:
       required:
         - host_id
         - fee_policy
+security:
+  - apiKey: []
+paths:
+  /payments:
+    post:
+      summary: Create payment order (local orchestration path)
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '202':
+          description: Payment intent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePaymentResponse'
+  /payments/{reference}:
+    get:
+      summary: Get payment status
+      parameters:
+        - in: path
+          name: reference
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentStatus'
+  /webhooks/{provider}:
+    post:
+      summary: Receive provider webhook
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+      responses:
+        '202':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+  /register/host:
+    post:
+      summary: Register host profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterHostRequest'
+      responses:
+        '201':
+          description: Host registered
+  /register/product:
+    post:
+      summary: Register host product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterProductRequest'
+      responses:
+        '201':
+          description: Product registered
+  /register/provider-account:
+    post:
+      summary: Register gateway credential mapping per host
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterProviderAccountRequest'
+      responses:
+        '201':
+          description: Provider account registered
+  /register/host-policy:
+    post:
+      summary: Register host fee policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterHostPolicyRequest'
+      responses:
+        '201':
+          description: Host policy registered
+  /host/{host_id}/payments:
+    post:
+      summary: Create payment via host-scoped proxy to rute-bayar contract
+      parameters:
+        - in: path
+          name: host_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '200':
+          description: Payment intent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePaymentResponse'
+  /host/{host_id}/payments/{reference}:
+    get:
+      summary: Get payment status via host-scoped proxy
+      parameters:
+        - in: path
+          name: host_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: reference
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentStatus'

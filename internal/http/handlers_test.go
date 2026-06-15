@@ -24,8 +24,8 @@ func TestCreatePaymentHTTP(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/payments", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var resp createPaymentResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
@@ -64,7 +64,7 @@ func TestWebhookHTTP(t *testing.T) {
 	whReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/webhooks/midtrans", bytes.NewReader(whBody))
 	whRec := httptest.NewRecorder()
 	mux.ServeHTTP(whRec, whReq)
-	if whRec.Code != http.StatusOK {
-		t.Fatalf("expected webhook 200, got %d", whRec.Code)
+	if whRec.Code != http.StatusAccepted {
+		t.Fatalf("expected webhook 202, got %d", whRec.Code)
 	}
 }

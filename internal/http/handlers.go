@@ -191,6 +191,7 @@ func handleCreatePayment(w http.ResponseWriter, r *http.Request, orchestrator *o
 	}
 	response := createPaymentResponse{Reference: out.Reference, Status: string(out.Order.Status), CheckoutURL: out.Order.ProviderCheckoutURL}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(response)
 }
 
@@ -240,6 +241,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request, orchestrator *orchest
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": string(status)})
 }
 

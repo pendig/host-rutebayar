@@ -29,9 +29,10 @@ func main() {
 	orchestrator := orchestration.NewOrchestratorWithStore(store, gateway.DefaultGateway())
 	serviceMux := httphandlers.SetupMux(orchestrator)
 	appMux := serviceMux
-	if strings.TrimSpace(cfg.UpstreamURL) != "" {
+	trimmedUpstreamURL := strings.TrimSpace(cfg.UpstreamURL)
+	if trimmedUpstreamURL != "" {
 		router := http.NewServeMux()
-		router.Handle("/host/", proxy.NewOpenAPIProxy(cfg.UpstreamURL))
+		router.Handle("/host/", proxy.NewOpenAPIProxy(trimmedUpstreamURL))
 		router.Handle("/", serviceMux)
 		appMux = router
 	}
@@ -45,7 +46,7 @@ func main() {
 		WriteTimeout:      cfg.Timeout,
 		IdleTimeout:       cfg.Timeout,
 	}
-	log.Printf("database dsn: %s", cfg.DBDSN)
+	log.Printf("database dsn configured")
 	log.Printf("host-rutebayar starting on %s", addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)

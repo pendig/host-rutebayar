@@ -379,9 +379,6 @@ func (s *Orchestrator) RegisterProduct(product domain.Product) error {
 		return s.store.UpsertProduct(product)
 	}
 	s.registry.Products[product.ID] = product
-	if product.FeePolicyOverride != nil {
-		s.registry.HostPolicies[product.HostID] = *product.FeePolicyOverride
-	}
 	return nil
 }
 
