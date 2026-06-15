@@ -907,14 +907,24 @@ const dashboardHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>host-rutebayar self-hosted</title>
 	<style>
-		body { font-family: Arial, sans-serif; margin: 0; padding: 16px; color: #11293f; background: radial-gradient(circle at 12% 0%, #f6fbff 0, #f0f6ff 36%, #f5f7ff 100%); }
+		body { font-family: Arial, sans-serif; margin: 0; color: #11293f; background: radial-gradient(circle at 12% 0%, #eef3ff 0, #e8f2ff 36%, #f5f7ff 100%); }
 		a { color: #114b8a; }
-		main { max-width: 1200px; margin: 0 auto; }
 		h1, h2, h3 { margin-top: 0; }
 		.section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 10px 26px rgba(28, 46, 74, 0.08); }
 		table { border-collapse: collapse; width: 100%; margin-top: 8px; }
 		th, td { border: 1px solid #cfdee6; padding: 8px; text-align: left; vertical-align: top; }
 		th { background: #16385f; color: #fff; }
+		.admin-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+		.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 20px; background: linear-gradient(160deg, #13345f, #183e73); color: #ecf3ff; }
+		.sidebar h2 { margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.3px; }
+		.sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+		.sidebar a { color: #eff5ff; text-decoration: none; font-size: 14px; border-radius: 9px; padding: 10px 12px; }
+		.sidebar a:hover { background: rgba(255, 255, 255, 0.12); }
+		.sidebar .active { background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+		.sidebar .muted { margin-top: 12px; opacity: 0.85; font-size: 12px; }
+		.content { padding: 16px 20px 24px 20px; overflow-x: auto; }
+		.top-actions { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+		.subtle { color: #6f7f95; font-size: 14px; }
 		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
 		input, textarea, select, button { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; border-radius: 8px; border: 1px solid #bfd0dd; }
 		textarea { min-height: 72px; font-family: monospace; }
@@ -924,8 +934,12 @@ const dashboardHTML = `<!doctype html>
 		.msg { margin-top: 10px; padding: 8px 10px; border-radius: 8px; display: none; }
 		.msg.ok { background: #eaffea; border: 1px solid #87d28f; color: #1f5a1f; }
 		.msg.err { background: #ffe9e9; border: 1px solid #ef9494; color: #7c1b1b; }
-		.top-actions { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-		.subtle { color: #6f7f95; font-size: 14px; }
+		@media (max-width: 1024px) {
+			.admin-shell { grid-template-columns: 1fr; }
+			.sidebar { position: static; height: auto; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+			.sidebar nav { width: 100%; display: flex; flex-wrap: wrap; }
+			.sidebar nav a { padding: 8px 12px; }
+		}
 	</style>
 	<script>
 		function splitCSV(value) {
@@ -1111,237 +1125,250 @@ const dashboardHTML = `<!doctype html>
 	</script>
 </head>
 <body>
-	<main>
-		<div class="top-actions">
-			<h1>host-rutebayar self-hosted</h1>
-			<div><a href="/ui/callbacks">Callback Monitor</a></div>
-		</div>
-		<p class="subtle">Akses UI lokal dari browser untuk registrasi host, produk, provider account, policy, serta smoke test.</p>
-		<div id="action-result" class="msg"></div>
-		<div class="section">
-			<h2>1) Quick bootstrap</h2>
-			<button type="button" onclick="seedDemo(event)" class="small-btn">Seed demo data</button>
-			<pre id="seed-output"></pre>
-		</div>
-		<div class="grid">
-			<section class="section">
-				<h2>2) Register Host</h2>
-				<form onsubmit="submitHost(event)">
-					<label>ID
-						<input id="host-id" required />
-					</label>
-					<label>Nama
-						<input id="host-name" required />
-					</label>
-					<label>Notification Key
-						<input id="host-notification-key" required />
-					</label>
-					<label>Host Secret
-						<input id="host-secret" required />
-					</label>
-					<label>Webhook Secret
-						<input id="host-webhook-secret" required />
-					</label>
-					<label>Callback URLs (pisahkan dengan koma)
-						<textarea id="host-callback-urls">https://example.com/callback</textarea>
-					</label>
-					<label>Callback Allowlist (pisahkan dengan koma)
-						<textarea id="host-callback-allowlist">https://example.com</textarea>
-					</label>
-					<button type="submit">Create Host</button>
+	<div class="admin-shell">
+		<aside class="sidebar">
+			<h2>Host RuteBayar</h2>
+			<p class="muted">Dashboard Admin</p>
+			<nav>
+				<a href="/ui" class="active">🏠 Dashboard</a>
+				<a href="/ui/callbacks">🔁 Callback Monitor</a>
+				<a href="/ui#hosts">📋 Hosts</a>
+				<a href="/ui#products">🧩 Products</a>
+				<a href="/ui#orders">🧾 Orders</a>
+			</nav>
+			<p class="muted">Akses jalur ini untuk operasional lokal dan pemantauan checkout.</p>
+		</aside>
+		<main class="content">
+			<div class="top-actions">
+				<h1>host-rutebayar self-hosted</h1>
+			</div>
+			<p class="subtle">Akses UI lokal dari browser untuk registrasi host, produk, provider account, policy, serta smoke test.</p>
+			<div id="action-result" class="msg"></div>
+			<div class="section">
+				<h2>1) Quick bootstrap</h2>
+				<button type="button" onclick="seedDemo(event)" class="small-btn">Seed demo data</button>
+				<pre id="seed-output"></pre>
+			</div>
+			<div class="grid">
+				<section class="section">
+					<h2>2) Register Host</h2>
+					<form onsubmit="submitHost(event)">
+						<label>ID
+							<input id="host-id" required />
+						</label>
+						<label>Nama
+							<input id="host-name" required />
+						</label>
+						<label>Notification Key
+							<input id="host-notification-key" required />
+						</label>
+						<label>Host Secret
+							<input id="host-secret" required />
+						</label>
+						<label>Webhook Secret
+							<input id="host-webhook-secret" required />
+						</label>
+						<label>Callback URLs (pisahkan dengan koma)
+							<textarea id="host-callback-urls">https://example.com/callback</textarea>
+						</label>
+						<label>Callback Allowlist (pisahkan dengan koma)
+							<textarea id="host-callback-allowlist">https://example.com</textarea>
+						</label>
+						<button type="submit">Create Host</button>
+					</form>
+				</section>
+				<section class="section">
+					<h2>3) Register Product</h2>
+					<form onsubmit="submitProduct(event)">
+						<label>Host
+							<select id="product-host-id" required>
+								<option value="">Pilih Host</option>
+								{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+							</select>
+						</label>
+						<label>Host Secret
+							<input id="product-host-secret" type="password" required />
+						</label>
+						<label>Product ID
+							<input id="product-id" required />
+						</label>
+						<label>Nama Produk
+							<input id="product-name" required />
+						</label>
+						<label>SKU
+							<input id="product-sku" required />
+						</label>
+						<label>Harga (integer)
+							<input id="product-price" type="number" min="0" step="1" required />
+						</label>
+						<label>Meta JSON (opsional)
+							<textarea id="product-meta">{}</textarea>
+						</label>
+						<label>Fee Policy Override JSON (opsional)
+							<textarea id="product-fee-override"></textarea>
+						</label>
+						<label style="display:flex; align-items:center; gap:8px;">
+							<input id="product-active" type="checkbox" checked />
+							<span>Is Active</span>
+						</label>
+						<button type="submit">Create Product</button>
+					</form>
+				</section>
+			</div>
+			<div class="grid">
+				<section class="section">
+					<h2>4) Register Provider Account</h2>
+					<form onsubmit="submitProviderAccount(event)">
+						<label>Host
+							<select id="provider-host-id" required>
+								<option value="">Pilih Host</option>
+								{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+							</select>
+						</label>
+						<label>Host Secret
+							<input id="provider-host-secret" type="password" required />
+						</label>
+						<label>Provider
+							<input id="provider-name" value="midtrans" required />
+						</label>
+						<label>Environment
+							<input id="provider-env" value="sandbox" />
+						</label>
+						<label>Credentials Hash
+							<input id="provider-credentials" required />
+						</label>
+						<label>Public Config JSON (opsional)
+							<textarea id="provider-config"></textarea>
+						</label>
+						<button type="submit">Register Account</button>
+					</form>
+				</section>
+				<section class="section">
+					<h2>5) Host Policy</h2>
+					<form onsubmit="submitHostPolicy(event)">
+						<label>Host
+							<select id="policy-host-id" required>
+								<option value="">Pilih Host</option>
+								{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+							</select>
+						</label>
+						<label>Host Secret
+							<input id="policy-host-secret" type="password" required />
+						</label>
+						<label>Type
+							<select id="policy-type">
+								<option value="percent">percent</option>
+								<option value="fixed">fixed</option>
+								<option value="free">free</option>
+							</select>
+						</label>
+						<label>Value
+							<input id="policy-value" type="number" step="0.1" value="2" required />
+						</label>
+						<label>Currency
+							<input id="policy-currency" value="IDR" />
+						</label>
+						<label>Rounding
+							<input id="policy-rounding" value="nearest" />
+						</label>
+						<label>Min Fee (opsional)
+							<input id="policy-min-fee" type="number" />
+						</label>
+						<label>Max Fee (opsional)
+							<input id="policy-max-fee" type="number" />
+						</label>
+						<label>Policy Version
+							<input id="policy-version" value="v1" />
+						</label>
+						<button type="submit">Set Policy</button>
+					</form>
+				</section>
+			</div>
+			<div class="section">
+				<h2>6) Test Payment</h2>
+				<form onsubmit="createTestPayment(event)">
+					<div class="grid">
+						<label>Host
+							<select id="test-host-id" required>
+								<option value="">Pilih Host</option>
+								{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+							</select>
+						</label>
+						<label>Product
+							<select id="test-product-id" required>
+								<option value="">Pilih Product</option>
+								{{range .Products}}<option value="{{.ID}}" data-host="{{.HostID}}">{{.ID}}</option>{{end}}
+							</select>
+						</label>
+						<label>Env
+							<input id="test-env" value="sandbox" />
+						</label>
+						<label>Buyer Ref
+							<input id="test-buyer-ref" />
+						</label>
+					</div>
+					<button type="submit">Create test payment</button>
 				</form>
-			</section>
-			<section class="section">
-				<h2>3) Register Product</h2>
-				<form onsubmit="submitProduct(event)">
-					<label>Host
-						<select id="product-host-id" required>
-							<option value="">Pilih Host</option>
-							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
-						</select>
-					</label>
-					<label>Host Secret
-						<input id="product-host-secret" type="password" required />
-					</label>
-					<label>Product ID
-						<input id="product-id" required />
-					</label>
-					<label>Nama Produk
-						<input id="product-name" required />
-					</label>
-					<label>SKU
-						<input id="product-sku" required />
-					</label>
-					<label>Harga (integer)
-						<input id="product-price" type="number" min="0" step="1" required />
-					</label>
-					<label>Meta JSON (opsional)
-						<textarea id="product-meta">{}</textarea>
-					</label>
-					<label>Fee Policy Override JSON (opsional)
-						<textarea id="product-fee-override"></textarea>
-					</label>
-					<label style="display:flex; align-items:center; gap:8px;">
-						<input id="product-active" type="checkbox" checked />
-						<span>Is Active</span>
-					</label>
-					<button type="submit">Create Product</button>
-				</form>
-			</section>
-		</div>
-		<div class="grid">
-			<section class="section">
-				<h2>4) Register Provider Account</h2>
-				<form onsubmit="submitProviderAccount(event)">
-					<label>Host
-						<select id="provider-host-id" required>
-							<option value="">Pilih Host</option>
-							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
-						</select>
-					</label>
-					<label>Host Secret
-						<input id="provider-host-secret" type="password" required />
-					</label>
-					<label>Provider
-						<input id="provider-name" value="midtrans" required />
-					</label>
-					<label>Environment
-						<input id="provider-env" value="sandbox" />
-					</label>
-					<label>Credentials Hash
-						<input id="provider-credentials" required />
-					</label>
-					<label>Public Config JSON (opsional)
-						<textarea id="provider-config"></textarea>
-					</label>
-					<button type="submit">Register Account</button>
-				</form>
-			</section>
-			<section class="section">
-				<h2>5) Host Policy</h2>
-				<form onsubmit="submitHostPolicy(event)">
-					<label>Host
-						<select id="policy-host-id" required>
-							<option value="">Pilih Host</option>
-							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
-						</select>
-					</label>
-					<label>Host Secret
-						<input id="policy-host-secret" type="password" required />
-					</label>
-					<label>Type
-						<select id="policy-type">
-							<option value="percent">percent</option>
-							<option value="fixed">fixed</option>
-							<option value="free">free</option>
-						</select>
-					</label>
-					<label>Value
-						<input id="policy-value" type="number" step="0.1" value="2" required />
-					</label>
-					<label>Currency
-						<input id="policy-currency" value="IDR" />
-					</label>
-					<label>Rounding
-						<input id="policy-rounding" value="nearest" />
-					</label>
-					<label>Min Fee (opsional)
-						<input id="policy-min-fee" type="number" />
-					</label>
-					<label>Max Fee (opsional)
-						<input id="policy-max-fee" type="number" />
-					</label>
-					<label>Policy Version
-						<input id="policy-version" value="v1" />
-					</label>
-					<button type="submit">Set Policy</button>
-				</form>
-			</section>
-		</div>
-		<div class="section">
-			<h2>6) Test Payment</h2>
-			<form onsubmit="createTestPayment(event)">
-				<div class="grid">
-					<label>Host
-						<select id="test-host-id" required>
-							<option value="">Pilih Host</option>
-							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
-						</select>
-					</label>
-					<label>Product
-						<select id="test-product-id" required>
-							<option value="">Pilih Product</option>
-							{{range .Products}}<option value="{{.ID}}" data-host="{{.HostID}}">{{.ID}}</option>{{end}}
-						</select>
-					</label>
-					<label>Env
-						<input id="test-env" value="sandbox" />
-					</label>
-					<label>Buyer Ref
-						<input id="test-buyer-ref" />
-					</label>
-				</div>
-				<button type="submit">Create test payment</button>
-			</form>
-			<pre id="test-output"></pre>
-		</div>
-		<div class="section">
-			<h2>Hosts</h2>
-			<table>
-				<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
-				{{range .Hosts}}
-				<tr>
-					<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
-					<td>{{.Name}}</td>
-					<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
-					<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
-				</tr>
-				{{else}}
-				<tr><td colspan="4">Belum ada host terdaftar.</td></tr>
-				{{end}}
-			</table>
-		</div>
-		<div class="section">
-			<h2>Products</h2>
-			<table>
-				<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
-				{{range .Products}}
-				<tr>
-					<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
-					<td>{{.HostID}}</td>
-					<td>{{.Name}}</td>
-					<td>{{.SKU}}</td>
-					<td>{{.Price}}</td>
-					<td>{{.IsActive}}</td>
-					<td>{{if .FeePolicyOverride}}yes{{else}}no{{end}}</td>
-				</tr>
-				{{else}}
-				<tr><td colspan="7">Belum ada produk terdaftar.</td></tr>
-				{{end}}
-			</table>
-		</div>
-		<div class="section">
-			<h2>Orders</h2>
-			<table>
-				<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
-				{{range .Orders}}
-				<tr>
-					<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
-					<td>{{.Status}}</td>
-					<td>{{.HostID}}</td>
-					<td>{{.ProductID}}</td>
-					<td>{{.Provider}}</td>
-					<td>{{.GrossAmount}}</td>
-					<td>{{.HostFeeAmount}}</td>
-					<td>{{.NetAmount}}</td>
-					<td><a href="{{.ProviderCheckoutURL}}">{{if .ProviderCheckoutURL}}open{{else}}-{{end}}</a></td>
-				</tr>
-				{{else}}
-				<tr><td colspan="9">Belum ada order.</td></tr>
-				{{end}}
-			</table>
-		</div>
-	</main>
+				<pre id="test-output"></pre>
+			</div>
+			<div id="hosts" class="section">
+				<h2>Hosts</h2>
+				<table>
+					<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
+					{{range .Hosts}}
+					<tr>
+						<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
+						<td>{{.Name}}</td>
+						<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
+						<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
+					</tr>
+					{{else}}
+					<tr><td colspan="4">Belum ada host terdaftar.</td></tr>
+					{{end}}
+				</table>
+			</div>
+			<div id="products" class="section">
+				<h2>Products</h2>
+				<table>
+					<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
+					{{range .Products}}
+					<tr>
+						<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
+						<td>{{.HostID}}</td>
+						<td>{{.Name}}</td>
+						<td>{{.SKU}}</td>
+						<td>{{.Price}}</td>
+						<td>{{.IsActive}}</td>
+						<td>{{if .FeePolicyOverride}}yes{{else}}no{{end}}</td>
+					</tr>
+					{{else}}
+					<tr><td colspan="7">Belum ada produk terdaftar.</td></tr>
+					{{end}}
+				</table>
+			</div>
+			<div id="orders" class="section">
+				<h2>Orders</h2>
+				<table>
+					<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
+					{{range .Orders}}
+					<tr>
+						<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
+						<td>{{.Status}}</td>
+						<td>{{.HostID}}</td>
+						<td>{{.ProductID}}</td>
+						<td>{{.Provider}}</td>
+						<td>{{.GrossAmount}}</td>
+						<td>{{.HostFeeAmount}}</td>
+						<td>{{.NetAmount}}</td>
+						<td><a href="{{.ProviderCheckoutURL}}">{{if .ProviderCheckoutURL}}open{{else}}-{{end}}</a></td>
+					</tr>
+					{{else}}
+					<tr><td colspan="9">Belum ada order.</td></tr>
+					{{end}}
+				</table>
+			</div>
+		</main>
+	</div>
 </body>
 </html>`
 
@@ -1529,7 +1556,16 @@ const uiCallbacksHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>Callback monitor</title>
 	<style>
-		body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #11293f; background: #f2f8ff; }
+		body { font-family: Arial, sans-serif; margin: 0; color: #11293f; background: #f2f8ff; }
+		.admin-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+		.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 20px; background: linear-gradient(160deg, #13345f, #183e73); color: #ecf3ff; }
+		.sidebar h2 { margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.3px; }
+		.sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+		.sidebar a { color: #eff5ff; text-decoration: none; font-size: 14px; border-radius: 9px; padding: 10px 12px; }
+		.sidebar a:hover { background: rgba(255, 255, 255, 0.12); }
+		.sidebar .active { background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+		.sidebar .muted { margin-top: 12px; opacity: 0.85; font-size: 12px; }
+		.content { padding: 16px 20px; overflow-x: auto; }
 		table { border-collapse: collapse; width: 100%; }
 		td, th { border: 1px solid #c8d7e4; padding: 8px; text-align: left; vertical-align: top; }
 		th { background: #12345c; color: #fff; }
@@ -1541,6 +1577,12 @@ const uiCallbacksHTML = `<!doctype html>
 		pre { background: #f8fcff; border: 1px solid #cfdce8; padding: 6px; }
 		.ok { color: #146c2e; }
 		.bad { color: #7f1d1d; }
+		@media (max-width: 1024px) {
+			.admin-shell { grid-template-columns: 1fr; }
+			.sidebar { position: static; height: auto; }
+			.sidebar nav { flex-direction: row; flex-wrap: wrap; }
+			.sidebar nav a { padding: 8px 12px; }
+		}
 	</style>
 	<script>
 		async function replay(reference, provider, status, idempotencyKey, buttonRef) {
@@ -1581,32 +1623,47 @@ const uiCallbacksHTML = `<!doctype html>
 	</script>
 </head>
 <body>
-	<div class="section">
-		<h1>Callback delivery monitor</h1>
-		<p><a href="/ui">← Dashboard</a></p>
-		<table>
-			<tr><th>At</th><th>Reference</th><th>Provider</th><th>Status</th><th>Result</th><th>Idempotency</th><th>Attempts</th><th>Error</th><th>Action</th></tr>
-			{{range .Deliveries}}
-			<tr>
-				<td>{{.At}}</td>
-				<td>{{.Reference}}</td>
-				<td>{{.Provider}}</td>
-				<td>{{.Status}}</td>
-				<td class="{{if eq .Result "failed"}}bad{{else}}ok{{end}}">{{.Result}}</td>
-				<td>{{.IdempotencyKey}}</td>
-				<td>{{.Attempts}}</td>
-				<td class="row-result">{{.Error}}</td>
-				<td>
-					<button
-						onclick="replay('{{.Reference}}', '{{.Provider}}', '{{.Status}}', '{{.IdempotencyKey}}', this)"
-						{{if or (eq .Reference "") (eq .Provider "") (eq .Status "") (eq .IdempotencyKey "")}}disabled{{end}}
-					>Replay</button>
-				</td>
-			</tr>
-			{{else}}
-			<tr><td colspan="9">Belum ada callback masuk.</td></tr>
-			{{end}}
-		</table>
+	<div class="admin-shell">
+		<aside class="sidebar">
+			<h2>Host RuteBayar</h2>
+			<p class="muted">Dashboard Admin</p>
+			<nav>
+				<a href="/ui">🏠 Dashboard</a>
+				<a href="/ui/callbacks" class="active">🔁 Callback Monitor</a>
+				<a href="/ui#hosts">📋 Hosts</a>
+				<a href="/ui#products">🧩 Products</a>
+				<a href="/ui#orders">🧾 Orders</a>
+			</nav>
+			<p class="muted">Monitor untuk delivery callback dan replay event.</p>
+		</aside>
+		<main class="content">
+			<div class="section">
+				<h1>Callback delivery monitor</h1>
+				<table>
+					<tr><th>At</th><th>Reference</th><th>Provider</th><th>Status</th><th>Result</th><th>Idempotency</th><th>Attempts</th><th>Error</th><th>Action</th></tr>
+					{{range .Deliveries}}
+					<tr>
+						<td>{{.At}}</td>
+						<td>{{.Reference}}</td>
+						<td>{{.Provider}}</td>
+						<td>{{.Status}}</td>
+						<td class="{{if eq .Result "failed"}}bad{{else}}ok{{end}}">{{.Result}}</td>
+						<td>{{.IdempotencyKey}}</td>
+						<td>{{.Attempts}}</td>
+						<td class="row-result">{{.Error}}</td>
+						<td>
+							<button
+								onclick="replay('{{.Reference}}', '{{.Provider}}', '{{.Status}}', '{{.IdempotencyKey}}', this)"
+								{{if or (eq .Reference "") (eq .Provider "") (eq .Status "") (eq .IdempotencyKey "")}}disabled{{end}}
+							>Replay</button>
+						</td>
+					</tr>
+					{{else}}
+					<tr><td colspan="9">Belum ada callback masuk.</td></tr>
+					{{end}}
+				</table>
+			</div>
+		</main>
 	</div>
 </body>
 </html>`
