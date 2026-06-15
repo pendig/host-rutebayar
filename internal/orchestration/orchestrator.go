@@ -426,6 +426,12 @@ func (s *Orchestrator) ListHosts() ([]domain.Host, error) {
 	return hosts, nil
 }
 
+func (s *Orchestrator) GetHost(hostID string) (domain.Host, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.findHost(hostID)
+}
+
 func (s *Orchestrator) ListProducts() ([]domain.Product, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

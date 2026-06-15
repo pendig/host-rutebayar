@@ -425,7 +425,9 @@ func (s *SQLiteStore) GetLedger(reference string) (domain.PaymentOrderLedger, er
 	if err := s.db.QueryRow(`SELECT l.gross_amount, l.host_fee_amount, l.provider_fee_amount, l.net_amount, l.policy_checksum, l.idempotency_key
 		FROM payment_order_ledgers l
 		INNER JOIN payment_orders o ON o.id = l.payment_order_id
-		WHERE o.reference = ?`, reference).
+		WHERE o.reference = ?
+		ORDER BY l.id DESC
+		LIMIT 1`, reference).
 		Scan(&ledger.GrossAmount, &ledger.HostFeeAmount, &ledger.ProviderFeeAmount, &ledger.NetAmount, &ledger.PolicyChecksum, &ledger.IdempotencyKey); err != nil {
 		if err == sql.ErrNoRows {
 			return domain.PaymentOrderLedger{}, fmt.Errorf("ledger not found")

@@ -93,6 +93,12 @@ func (p FeePolicy) Validate() error {
 	if p.MinFee != nil && p.MaxFee != nil && *p.MinFee > *p.MaxFee {
 		return errors.New("min fee cannot exceed max fee")
 	}
+	if p.MinFee != nil && *p.MinFee < 0 {
+		return errors.New("min fee cannot be negative")
+	}
+	if p.MaxFee != nil && *p.MaxFee < 0 {
+		return errors.New("max fee cannot be negative")
+	}
 	return nil
 }
 

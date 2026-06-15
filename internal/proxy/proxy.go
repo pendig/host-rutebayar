@@ -51,11 +51,12 @@ func (p *OpenAPIProxy) createPayment(ctx context.Context, hostID string, body []
 	return p.Client.Do(req)
 }
 
-func (p *OpenAPIProxy) getPaymentStatus(ctx context.Context, reference string) (*http.Response, error) {
+func (p *OpenAPIProxy) getPaymentStatus(ctx context.Context, hostID, reference string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.upstreamURL(fmt.Sprintf("/api/v1/payments/%s", reference)), nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("X-Host-ID", hostID)
 	return p.Client.Do(req)
 }
 
@@ -102,7 +103,7 @@ func (p *OpenAPIProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid host route", http.StatusNotFound)
 			return
 		}
-		resp, err := p.getPaymentStatus(r.Context(), parts[2])
+		resp, err := p.getPaymentStatus(r.Context(), hostID, parts[2])
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return

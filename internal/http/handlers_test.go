@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/pendig/host-rutebayar/internal/domain"
 	"github.com/pendig/host-rutebayar/internal/orchestration"
+	"github.com/pendig/host-rutebayar/internal/security"
 )
 
 func TestCreatePaymentHTTP(t *testing.T) {
@@ -22,6 +24,7 @@ func TestCreatePaymentHTTP(t *testing.T) {
 	mux := SetupMux(orchestration.NewOrchestrator(reg))
 	body, _ := json.Marshal(map[string]string{"host_id": "h-1", "product_id": "p-1", "env": "sandbox"})
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/payments", bytes.NewReader(body))
+	req.Header.Set("X-Host-Secret", "hs")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
@@ -54,6 +57,7 @@ func TestWebhookHTTP(t *testing.T) {
 
 	createBody, _ := json.Marshal(map[string]string{"host_id": "h-1", "product_id": "p-1", "env": "sandbox"})
 	createReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/payments", bytes.NewReader(createBody))
+	createReq.Header.Set("X-Host-Secret", "hs")
 	createRec := httptest.NewRecorder()
 	mux.ServeHTTP(createRec, createReq)
 	var createResp createPaymentResponse
@@ -62,6 +66,8 @@ func TestWebhookHTTP(t *testing.T) {
 	wh := map[string]string{"reference": createResp.Reference, "status": string(domain.PaymentOrderStatusSuccess), "idempotency_key": "idem-1"}
 	whBody, _ := json.Marshal(wh)
 	whReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/webhooks/midtrans", bytes.NewReader(whBody))
+	signature, _ := security.SignatureRing{Current: "ws"}.ComputeSignature(whBody, time.Now().UTC())
+	whReq.Header.Set("X-Webhook-Signature", signature)
 	whRec := httptest.NewRecorder()
 	mux.ServeHTTP(whRec, whReq)
 	if whRec.Code != http.StatusAccepted {

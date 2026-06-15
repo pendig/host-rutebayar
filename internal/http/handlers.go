@@ -1,15 +1,19 @@
 package httphandlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pendig/host-rutebayar/internal/domain"
 	"github.com/pendig/host-rutebayar/internal/orchestration"
+	"github.com/pendig/host-rutebayar/internal/security"
 )
 
 // CreatePaymentRequest is payload for POST /payments.
@@ -179,6 +183,10 @@ func handleCreatePayment(w http.ResponseWriter, r *http.Request, orchestrator *o
 		http.Error(w, "host_id and product_id are required", http.StatusBadRequest)
 		return
 	}
+	if err := authorizeHostSecret(r, orchestrator, req.HostID); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 	out, err := orchestrator.CreatePayment(orchestration.CreateInput{
 		HostID:    req.HostID,
 		ProductID: req.ProductID,
@@ -226,13 +234,22 @@ func handleWebhook(w http.ResponseWriter, r *http.Request, orchestrator *orchest
 		http.Error(w, "provider is required", http.StatusBadRequest)
 		return
 	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
 	var payload webhookPayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&payload); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 	if payload.Reference == "" || payload.Status == "" || payload.IdempotencyKey == "" {
 		http.Error(w, "reference, status, and idempotency_key are required", http.StatusBadRequest)
+		return
+	}
+	if err := authorizeWebhookSignature(r, orchestrator, payload.Reference, body); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	status, err := orchestrator.ReconcileWebhook(payload.Reference, provider, payload.Status, payload.IdempotencyKey)
@@ -282,6 +299,10 @@ func handleRegisterProduct(w http.ResponseWriter, r *http.Request, orchestrator 
 		http.Error(w, "id, host_id, name, and price are required", http.StatusBadRequest)
 		return
 	}
+	if err := authorizeHostSecret(r, orchestrator, req.HostID); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 	product := domain.Product{
 		ID:       req.ID,
 		HostID:   req.HostID,
@@ -324,6 +345,10 @@ func handleRegisterProviderAccount(w http.ResponseWriter, r *http.Request, orche
 		http.Error(w, "host_id, provider, env, and credentials_hash are required", http.StatusBadRequest)
 		return
 	}
+	if err := authorizeHostSecret(r, orchestrator, req.HostID); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 	if req.PublicConfig == nil {
 		req.PublicConfig = map[string]string{}
 	}
@@ -352,6 +377,10 @@ func handleRegisterHostPolicy(w http.ResponseWriter, r *http.Request, orchestrat
 		http.Error(w, "host_id is required", http.StatusBadRequest)
 		return
 	}
+	if err := authorizeHostSecret(r, orchestrator, req.HostID); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 	policy := domain.FeePolicy{
 		Type:          domain.FeeType(req.FeePolicyInput.Type),
 		Value:         req.FeePolicyInput.Value,
@@ -367,6 +396,37 @@ func handleRegisterHostPolicy(w http.ResponseWriter, r *http.Request, orchestrat
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(registerResponse{ID: req.HostID, Message: "host policy registered"})
+}
+
+func authorizeHostSecret(r *http.Request, orchestrator *orchestration.Orchestrator, hostID string) error {
+	host, err := orchestrator.GetHost(hostID)
+	if err != nil {
+		return err
+	}
+	if r.Header.Get("X-Host-Secret") != host.HostSecret {
+		return fmt.Errorf("invalid host secret")
+	}
+	return nil
+}
+
+func authorizeWebhookSignature(r *http.Request, orchestrator *orchestration.Orchestrator, reference string, body []byte) error {
+	order, err := orchestrator.GetPayment(reference)
+	if err != nil {
+		return err
+	}
+	host, err := orchestrator.GetHost(order.HostID)
+	if err != nil {
+		return err
+	}
+	signature := r.Header.Get("X-Webhook-Signature")
+	if signature == "" {
+		return fmt.Errorf("missing webhook signature")
+	}
+	ring := security.SignatureRing{Current: host.WebhookSecret}
+	if err := ring.VerifySignature(body, signature, 5*time.Minute, time.Now().UTC()); err != nil {
+		return fmt.Errorf("invalid webhook signature")
+	}
+	return nil
 }
 
 func handleUI(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
