@@ -11,6 +11,10 @@ components:
       type: apiKey
       in: header
       name: X-Host-Secret
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
   schemas:
     CreatePaymentRequest:
       type: object
@@ -226,6 +230,8 @@ paths:
   /webhooks/{provider}:
     post:
       summary: Receive provider webhook
+      security:
+        - webhookSignature: []
       parameters:
         - in: path
           name: provider

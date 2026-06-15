@@ -28,7 +28,7 @@ func Load() Config {
 		Timeout:       getEnvDuration("HOST_RUTEBAYAR_TIMEOUT", 10*time.Second),
 		DBDSN:         getEnv("HOST_RUTEBAYAR_DATABASE_DSN", "file:host-rutebayar.db?_pragma=foreign_keys(ON)"),
 		UpstreamURL:   getEnv("HOST_RUTEBAYAR_UPSTREAM_BASE_URL", ""),
-		AdminPassword: getEnv("HOST_RUTEBAYAR_ADMIN_PASSWORD", "admin123"),
+		AdminPassword: getEnv("HOST_RUTEBAYAR_ADMIN_PASSWORD", ""),
 	}
 }
 
