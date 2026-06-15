@@ -5,18 +5,39 @@ import (
 	"net/http"
 
 	"github.com/pendig/host-rutebayar/internal/config"
+	"github.com/pendig/host-rutebayar/internal/gateway"
+	httphandlers "github.com/pendig/host-rutebayar/internal/http"
+	"github.com/pendig/host-rutebayar/internal/orchestration"
+	"github.com/pendig/host-rutebayar/internal/storage"
 )
 
 func main() {
 	cfg := config.Load()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	store, err := storage.NewSQLiteStore(cfg.DBDSN)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		_ = store.DB().Close()
+	}()
+	if err := store.Migrate(); err != nil {
+		log.Fatal(err)
+	}
 
+	orchestrator := orchestration.NewOrchestratorWithStore(store, gateway.DefaultGateway())
+	mux := httphandlers.SetupMux(orchestrator)
 	addr := cfg.ListenAddress()
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: cfg.Timeout,
+		ReadTimeout:       cfg.Timeout,
+		WriteTimeout:      cfg.Timeout,
+		IdleTimeout:       cfg.Timeout,
+	}
+	log.Printf("database dsn: %s", cfg.DBDSN)
 	log.Printf("host-rutebayar starting on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }

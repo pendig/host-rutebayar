@@ -29,13 +29,13 @@ const (
 
 // Host captures platform host profile metadata.
 type Host struct {
-	ID               string
-	Name             string
-	CallbackURLs     []string
+	ID                string
+	Name              string
+	CallbackURLs      []string
 	CallbackAllowlist []string
-	NotificationKey  string
-	HostSecret       string
-	WebhookSecret    string
+	NotificationKey   string
+	HostSecret        string
+	WebhookSecret     string
 }
 
 func (h Host) Validate() error {
@@ -84,6 +84,11 @@ func (p FeePolicy) Validate() error {
 		}
 	default:
 		return errors.New("unsupported fee type")
+	}
+	switch p.Rounding {
+	case RoundingRuleNearest, RoundingRuleFloor, RoundingRuleCeil, "":
+	default:
+		return errors.New("unsupported rounding rule")
 	}
 	if p.MinFee != nil && p.MaxFee != nil && *p.MinFee > *p.MaxFee {
 		return errors.New("min fee cannot exceed max fee")
@@ -218,39 +223,41 @@ const (
 
 // PaymentOrder stores immutable transaction snapshot and calc output.
 type PaymentOrder struct {
-	ID               string
-	Reference        string
-	HostID           string
-	ProductID        string
-	Provider         string
-	Currency         string
-	Env              string
-	Status           PaymentOrderStatus
-	GrossAmount      int64
-	HostFeeAmount    int64
-	ProviderFeeAmount int64
-	NetAmount        int64
-	BuyerRef         string
-	PolicySnapshotID string
+	ID                  string
+	Reference           string
+	HostID              string
+	ProductID           string
+	Provider            string
+	Currency            string
+	Env                 string
+	Status              PaymentOrderStatus
+	GrossAmount         int64
+	HostFeeAmount       int64
+	ProviderFeeAmount   int64
+	NetAmount           int64
+	BuyerRef            string
+	PolicySnapshotID    string
+	ProviderReference   string
+	ProviderCheckoutURL string
 }
 
 // PaymentOrderLedger stores immutable settlement line.
 type PaymentOrderLedger struct {
-	PaymentOrderID   string
-	GrossAmount      int64
-	HostFeeAmount    int64
+	PaymentOrderID    string
+	GrossAmount       int64
+	HostFeeAmount     int64
 	ProviderFeeAmount int64
-	NetAmount        int64
-	PolicyChecksum   string
-	IdempotencyKey   string
+	NetAmount         int64
+	PolicyChecksum    string
+	IdempotencyKey    string
 }
 
 // WebhookRoute stores mapping + retry strategy for callback host.
 type WebhookRoute struct {
-	ID            string
-	HostID        string
+	ID             string
+	HostID         string
 	PaymentOrderID string
-	CallbackURL   string
-	RetryAttempts int
+	CallbackURL    string
+	RetryAttempts  int
 	RetryBackoffMs int
 }

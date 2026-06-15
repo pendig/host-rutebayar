@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,8 @@ type OpenAPIProxy struct {
 	UpstreamBaseURL string
 	Client          *http.Client
 }
+
+const maxCreateBodyBytes int64 = 1 << 20
 
 func NewOpenAPIProxy(upstreamBaseURL string) *OpenAPIProxy {
 	return &OpenAPIProxy{
@@ -38,17 +41,22 @@ func (p *OpenAPIProxy) upstreamURL(path string) string {
 	return fmt.Sprintf("%s%s", p.UpstreamBaseURL, path)
 }
 
-func (p *OpenAPIProxy) createPayment(hostID string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, p.upstreamURL("/api/v1/payments"), bytes.NewReader(body))
+func (p *OpenAPIProxy) createPayment(ctx context.Context, hostID string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.upstreamURL("/api/v1/payments"), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-Host-ID", hostID)
+	req.Header.Set("Content-Type", "application/json")
 	return p.Client.Do(req)
 }
 
-func (p *OpenAPIProxy) getPaymentStatus(reference string) (*http.Response, error) {
-	return p.Client.Get(p.upstreamURL(fmt.Sprintf("/api/v1/payments/%s", reference)))
+func (p *OpenAPIProxy) getPaymentStatus(ctx context.Context, reference string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.upstreamURL(fmt.Sprintf("/api/v1/payments/%s", reference)), nil)
+	if err != nil {
+		return nil, err
+	}
+	return p.Client.Do(req)
 }
 
 // ServeHTTP maps host routes:
@@ -66,24 +74,43 @@ func (p *OpenAPIProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hostID := parts[0]
+	if hostID == "" {
+		http.Error(w, "invalid host route", http.StatusNotFound)
+		return
+	}
 
 	switch {
 	case r.Method == http.MethodPost && len(parts) == 2 && parts[1] == "payments":
-		resp, err := p.createPayment(hostID, readAll(r))
+		body, err := readAll(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp, err := p.createPayment(r.Context(), hostID, body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
+		if ct := resp.Header.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	case r.Method == http.MethodGet && len(parts) == 3 && parts[1] == "payments":
-		resp, err := p.getPaymentStatus(parts[2])
+		if parts[2] == "" {
+			http.Error(w, "invalid host route", http.StatusNotFound)
+			return
+		}
+		resp, err := p.getPaymentStatus(r.Context(), parts[2])
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
+		if ct := resp.Header.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	default:
@@ -116,7 +143,13 @@ func (p *OpenAPIProxy) ReplayWebhookFromProvider(payload json.RawMessage) ([]byt
 	return json.Marshal(replay)
 }
 
-func readAll(r *http.Request) []byte {
-	body, _ := io.ReadAll(r.Body)
-	return body
+func readAll(r *http.Request) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxCreateBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxCreateBodyBytes {
+		return nil, fmt.Errorf("request body too large")
+	}
+	return body, nil
 }

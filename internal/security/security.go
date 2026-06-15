@@ -36,6 +36,9 @@ func (r SignatureRing) ComputeSignature(message []byte, ts time.Time) (string, e
 }
 
 func (r SignatureRing) VerifySignature(message []byte, signature string, window time.Duration, now time.Time) error {
+	if r.Current == "" {
+		return errors.New("current secret is required")
+	}
 	parts := strings.SplitN(signature, sep, 2)
 	if len(parts) != 2 || !strings.HasPrefix(parts[0], signaturePrefix) {
 		return errors.New("invalid signature format")
@@ -138,7 +141,10 @@ func (e CryptoEnvelope) Encrypt(plainText []byte, aad []byte) (string, error) {
 		return "", err
 	}
 	cipherText := gcm.Seal(nil, nonce, plainText, aad)
-	return base64.StdEncoding.EncodeToString(append(nonce, cipherText...)), nil
+	result := make([]byte, len(nonce)+len(cipherText))
+	copy(result, nonce)
+	copy(result[len(nonce):], cipherText)
+	return base64.StdEncoding.EncodeToString(result), nil
 }
 
 func (e CryptoEnvelope) Decrypt(cipherText string, aad []byte) ([]byte, error) {

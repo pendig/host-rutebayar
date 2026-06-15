@@ -2,6 +2,7 @@ package httphandlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,7 @@ func TestCreatePaymentHTTP(t *testing.T) {
 
 	mux := SetupMux(orchestration.NewOrchestrator(reg))
 	body, _ := json.Marshal(map[string]string{"host_id": "h-1", "product_id": "p-1", "env": "sandbox"})
-	req := httptest.NewRequest(http.MethodPost, "/payments", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/payments", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -34,7 +35,7 @@ func TestCreatePaymentHTTP(t *testing.T) {
 		t.Fatal("reference should be set")
 	}
 
-	req2 := httptest.NewRequest(http.MethodGet, "/payments/"+resp.Reference, nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/payments/"+resp.Reference, nil)
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
@@ -52,7 +53,7 @@ func TestWebhookHTTP(t *testing.T) {
 	mux := SetupMux(orchestrator)
 
 	createBody, _ := json.Marshal(map[string]string{"host_id": "h-1", "product_id": "p-1", "env": "sandbox"})
-	createReq := httptest.NewRequest(http.MethodPost, "/payments", bytes.NewReader(createBody))
+	createReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/payments", bytes.NewReader(createBody))
 	createRec := httptest.NewRecorder()
 	mux.ServeHTTP(createRec, createReq)
 	var createResp createPaymentResponse
@@ -60,7 +61,7 @@ func TestWebhookHTTP(t *testing.T) {
 
 	wh := map[string]string{"reference": createResp.Reference, "status": string(domain.PaymentOrderStatusSuccess), "idempotency_key": "idem-1"}
 	whBody, _ := json.Marshal(wh)
-	whReq := httptest.NewRequest(http.MethodPost, "/webhooks/midtrans", bytes.NewReader(whBody))
+	whReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/webhooks/midtrans", bytes.NewReader(whBody))
 	whRec := httptest.NewRecorder()
 	mux.ServeHTTP(whRec, whReq)
 	if whRec.Code != http.StatusOK {

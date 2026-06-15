@@ -50,7 +50,11 @@ func NewAuditTrail() *AuditTrail {
 func (a *AuditTrail) Append(event, referenceID string, details map[string]string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.events = append(a.events, AuditEvent{At: time.Now().UTC(), Event: event, ReferenceID: referenceID, Details: details})
+	copyDetails := map[string]string{}
+	for key, value := range details {
+		copyDetails[key] = value
+	}
+	a.events = append(a.events, AuditEvent{At: time.Now().UTC(), Event: event, ReferenceID: referenceID, Details: copyDetails})
 }
 
 func (a *AuditTrail) Len() int {
@@ -65,7 +69,12 @@ func (a *AuditTrail) Last() AuditEvent {
 	if len(a.events) == 0 {
 		return AuditEvent{}
 	}
-	return a.events[len(a.events)-1]
+	last := a.events[len(a.events)-1]
+	copyDetails := map[string]string{}
+	for key, value := range last.Details {
+		copyDetails[key] = value
+	}
+	return AuditEvent{At: last.At, Event: last.Event, ReferenceID: last.ReferenceID, Details: copyDetails}
 }
 
 // RetryPolicy drives webhook callback retries.

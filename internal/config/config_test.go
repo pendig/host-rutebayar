@@ -1,16 +1,16 @@
 package config
 
 import (
-	"os"
 	"testing"
 	"time"
 )
 
 func TestLoadDefault(t *testing.T) {
-	_ = os.Unsetenv("HOST_RUTEBAYAR_ENV")
-	_ = os.Unsetenv("HOST_RUTEBAYAR_HOST")
-	_ = os.Unsetenv("HOST_RUTEBAYAR_PORT")
-	_ = os.Unsetenv("HOST_RUTEBAYAR_TIMEOUT")
+	t.Setenv("HOST_RUTEBAYAR_ENV", "development")
+	t.Setenv("HOST_RUTEBAYAR_HOST", "127.0.0.1")
+	t.Setenv("HOST_RUTEBAYAR_PORT", "8080")
+	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "10s")
+	t.Setenv("HOST_RUTEBAYAR_DATABASE_DSN", "file:host-rutebayar.db?_pragma=foreign_keys(ON)")
 
 	cfg := Load()
 	if cfg.Env != "development" {
@@ -25,25 +25,36 @@ func TestLoadDefault(t *testing.T) {
 	if cfg.Timeout != 10*time.Second {
 		t.Fatalf("expected default Timeout=10s, got %s", cfg.Timeout)
 	}
+	if cfg.DBDSN == "" {
+		t.Fatalf("expected default DBDSN set")
+	}
 }
 
 func TestLoadWithEnv(t *testing.T) {
-	_ = os.Setenv("HOST_RUTEBAYAR_ENV", "production")
-	_ = os.Setenv("HOST_RUTEBAYAR_HOST", "0.0.0.0")
-	_ = os.Setenv("HOST_RUTEBAYAR_PORT", "9000")
-	_ = os.Setenv("HOST_RUTEBAYAR_TIMEOUT", "2s")
-	defer func() {
-		_ = os.Unsetenv("HOST_RUTEBAYAR_ENV")
-		_ = os.Unsetenv("HOST_RUTEBAYAR_HOST")
-		_ = os.Unsetenv("HOST_RUTEBAYAR_PORT")
-		_ = os.Unsetenv("HOST_RUTEBAYAR_TIMEOUT")
-	}()
+	t.Setenv("HOST_RUTEBAYAR_ENV", "production")
+	t.Setenv("HOST_RUTEBAYAR_HOST", "0.0.0.0")
+	t.Setenv("HOST_RUTEBAYAR_PORT", "9000")
+	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "2s")
+	t.Setenv("HOST_RUTEBAYAR_DATABASE_DSN", "file:test.db")
 
 	cfg := Load()
-	if cfg.Env != "production" || cfg.Host != "0.0.0.0" || cfg.Port != 9000 || cfg.Timeout != 2*time.Second {
+	if cfg.Env != "production" || cfg.Host != "0.0.0.0" || cfg.Port != 9000 || cfg.Timeout != 2*time.Second || cfg.DBDSN != "file:test.db" {
 		t.Fatalf("loaded config does not match overrides: %+v", cfg)
 	}
 	if cfg.ListenAddress() != "0.0.0.0:9000" {
 		t.Fatalf("unexpected listen address: %s", cfg.ListenAddress())
+	}
+}
+
+func TestLoadInvalidConfigUsesDefault(t *testing.T) {
+	t.Setenv("HOST_RUTEBAYAR_PORT", "0")
+	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "-1s")
+
+	cfg := Load()
+	if cfg.Port != 8080 {
+		t.Fatalf("expected fallback port 8080, got %d", cfg.Port)
+	}
+	if cfg.Timeout != 10*time.Second {
+		t.Fatalf("expected fallback timeout 10s, got %s", cfg.Timeout)
 	}
 }

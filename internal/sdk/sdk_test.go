@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,7 @@ func TestSDKCreatePayment(t *testing.T) {
 	defer server.Close()
 
 	client := New(server.URL)
-	resp, err := client.CreatePayment(CreatePaymentRequest{HostID: "host-1", ProductID: "p-1"})
+	resp, err := client.CreatePayment(context.Background(), CreatePaymentRequest{HostID: "host-1", ProductID: "p-1"})
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
@@ -36,13 +37,16 @@ func TestSDKGetPayment(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("expected GET, got %s", r.Method)
 		}
+		if !strings.HasPrefix(r.URL.Path, "/host/host-1/payments/r1") {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(PaymentStatus{Reference: "r1", Status: "success"})
 	}))
 	defer server.Close()
 
 	client := New(server.URL)
-	_, err := client.GetPayment("r1")
+	_, err := client.GetPayment(context.Background(), "host-1", "r1")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
 	}
