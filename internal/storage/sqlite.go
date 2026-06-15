@@ -573,10 +573,24 @@ func (s *SQLiteStore) DeleteHost(hostID string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, _ = tx.ExecContext(ctx, `DELETE FROM host_provider_accounts WHERE host_id = ?`, hostID)
-	_, _ = tx.ExecContext(ctx, `DELETE FROM products WHERE host_id = ?`, hostID)
-	_, _ = tx.ExecContext(ctx, `DELETE FROM host_fee_policies WHERE host_id = ?`, hostID)
-	
+	var orderCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM payment_orders WHERE host_id = ?`, hostID).Scan(&orderCount); err != nil {
+		return err
+	}
+	if orderCount > 0 {
+		return fmt.Errorf("cannot delete host with existing orders")
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM host_provider_accounts WHERE host_id = ?`, hostID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM products WHERE host_id = ?`, hostID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM host_fee_policies WHERE host_id = ?`, hostID); err != nil {
+		return err
+	}
+		
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE id = ?`, hostID); err != nil {
 		return err
 	}
@@ -594,4 +608,3 @@ func (s *SQLiteStore) DeleteProviderAccount(hostID, provider, env string) error 
 	_, err := s.db.Exec(`DELETE FROM host_provider_accounts WHERE host_id = ? AND provider = ? AND env = ?`, hostID, provider, env)
 	return err
 }
-
