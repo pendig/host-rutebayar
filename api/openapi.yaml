@@ -1,0 +1,26 @@
+openapi: 3.0.3
+info:
+  title: host-rutebayar
+  version: 0.1.0
+  description: Orchestrator API draft for marketplace-host payment routing.
+servers:
+  - url: /v1
+paths:
+  /payments:
+    post:
+      summary: Create payment order
+      responses:
+        '202':
+          description: Payment intent created
+  /payments/{reference}:
+    get:
+      summary: Get payment status
+      responses:
+        '200':
+          description: Payment status
+  /webhooks/{provider}:
+    post:
+      summary: Receive provider webhook
+      responses:
+        '202':
+          description: Webhook accepted
