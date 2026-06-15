@@ -1568,6 +1568,7 @@ const dashboardHTML = `<!doctype html>
 			const webhookSecret = btn.getAttribute("data-webhook-secret");
 			const callbackUrls = btn.getAttribute("data-endpoints");
 			const callbackAllowlist = btn.getAttribute("data-allowlist");
+			document.getElementById("host-id").dataset.originalSecret = hostSecret;
 			editHost(id, name, notificationKey, hostSecret, webhookSecret, callbackUrls, callbackAllowlist);
 		}
 
@@ -1659,7 +1660,12 @@ const dashboardHTML = `<!doctype html>
 					callback_urls: splitCSV(document.getElementById("host-callback-urls").value),
 					callback_allowlist: splitCSV(document.getElementById("host-callback-allowlist").value),
 				};
-				await postJSON("/register/host", payload);
+				const headers = {};
+				const originalSecret = document.getElementById("host-id").dataset.originalSecret;
+				if (originalSecret) {
+					headers["X-Host-Secret"] = originalSecret;
+				}
+				await postJSON("/register/host", payload, headers);
 				showToast("Host berhasil disimpan. Memuat ulang...", true);
 				setTimeout(() => location.reload(), 600);
 			} catch (err) {

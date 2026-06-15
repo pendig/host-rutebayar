@@ -2,7 +2,7 @@
 
 ## 1. Prasyarat
 
-- Go 1.21+ pada mesin operasi.
+- Go 1.25.11+ pada mesin operasi.
 - Direktori kerja yang dapat menulis file `host-rutebayar.db`.
 - Kunci kredensial `host_secret` dan `webhook_secret` siap per-host.
 - (Opsional) upstream rute-bayar bila pakai mode proxy host-scoped.
