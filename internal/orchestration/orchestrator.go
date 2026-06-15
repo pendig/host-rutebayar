@@ -3,10 +3,12 @@ package orchestration
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -341,21 +343,73 @@ func webhookIdempotencyKey(reference, provider, idempotencyKey string) string {
 
 // ReconcileWebhookWithRetry applies retry policy to webhook reconciliation simulation.
 func (s *Orchestrator) ReconcileWebhookWithRetry(reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, error) {
+	statusResp, _, err := s.ReconcileWebhookWithRetryWithAttempts(context.Background(), reference, provider, status, idempotencyKey)
+	return statusResp, err
+}
+
+func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(ctx context.Context, reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, int, error) {
 	var statusResp domain.PaymentOrderStatus
 	var err error
+	attempts := 0
 	for attempt := 1; attempt <= s.retryPolicy.MaxAttempts; attempt++ {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return "", attempts, ctx.Err()
+			default:
+			}
+		}
+
+		attempts = attempt
 		statusResp, err = s.ReconcileWebhook(reference, provider, status, idempotencyKey)
 		if err == nil {
-			return statusResp, nil
+			return statusResp, attempts, nil
+		}
+		if !isRetryableWebhookError(err) {
+			return "", attempts, err
 		}
 		if attempt == s.retryPolicy.MaxAttempts {
-			return "", err
+			return "", attempts, err
 		}
 		s.metrics.Inc("payments.webhook.retry")
 		delay := s.retryPolicy.DelayForAttempt(attempt)
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return "", attempts, ctx.Err()
+			case <-time.After(delay):
+			}
+			continue
+		}
 		time.Sleep(delay)
 	}
-	return statusResp, err
+	return statusResp, attempts, err
+}
+
+func isRetryableWebhookError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "not found") {
+		return false
+	}
+	if strings.Contains(msg, "no rows") {
+		return false
+	}
+	if strings.Contains(msg, "provider mismatch") {
+		return false
+	}
+	if strings.Contains(msg, "invalid status transition") {
+		return false
+	}
+	if strings.Contains(msg, "unsupported status") {
+		return false
+	}
+	return true
 }
 
 // RegisterHost stores host profile in-memory or sqlite.
@@ -447,6 +501,15 @@ func (s *Orchestrator) ListProducts() ([]domain.Product, error) {
 		products = append(products, product)
 	}
 	return products, nil
+}
+
+func (s *Orchestrator) ListProviderAccounts(hostID string) ([]domain.HostProviderAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		return s.store.GetProviderAccounts(hostID)
+	}
+	return append([]domain.HostProviderAccount{}, s.registry.HostProviderAccts[hostID]...), nil
 }
 
 func (s *Orchestrator) ListOrders() ([]domain.PaymentOrder, error) {
@@ -618,3 +681,70 @@ func newReference() string {
 	_, _ = rand.Read(buf)
 	return fmt.Sprintf("ord-%d-%s", time.Now().UnixNano(), hex.EncodeToString(buf))
 }
+
+// DeleteHost removes host configuration and related dependencies.
+func (s *Orchestrator) DeleteHost(hostID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		type hostDeleter interface {
+			DeleteHost(id string) error
+		}
+		if hd, ok := s.store.(hostDeleter); ok {
+			return hd.DeleteHost(hostID)
+		}
+		return errors.New("underlying store does not support host deletion")
+	}
+	delete(s.registry.Hosts, hostID)
+	delete(s.registry.HostPolicies, hostID)
+	delete(s.registry.HostProviderAccts, hostID)
+	for k, v := range s.registry.Products {
+		if v.HostID == hostID {
+			delete(s.registry.Products, k)
+		}
+	}
+	return nil
+}
+
+// DeleteProduct removes product config.
+func (s *Orchestrator) DeleteProduct(productID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		type productDeleter interface {
+			DeleteProduct(id string) error
+		}
+		if pd, ok := s.store.(productDeleter); ok {
+			return pd.DeleteProduct(productID)
+		}
+		return errors.New("underlying store does not support product deletion")
+	}
+	delete(s.registry.Products, productID)
+	return nil
+}
+
+// DeleteProviderAccount removes host provider account configs.
+func (s *Orchestrator) DeleteProviderAccount(hostID, provider, env string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		type providerDeleter interface {
+			DeleteProviderAccount(hostID, provider, env string) error
+		}
+		if pd, ok := s.store.(providerDeleter); ok {
+			return pd.DeleteProviderAccount(hostID, provider, env)
+		}
+		return errors.New("underlying store does not support provider account deletion")
+	}
+	accts := s.registry.HostProviderAccts[hostID]
+	filtered := accts[:0]
+	for _, acct := range accts {
+		if acct.Provider == provider && acct.Env == env {
+			continue
+		}
+		filtered = append(filtered, acct)
+	}
+	s.registry.HostProviderAccts[hostID] = filtered
+	return nil
+}
+

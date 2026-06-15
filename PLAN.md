@@ -96,6 +96,6 @@
 
 ## Phase 8 - Operasional dan Acceptance
 
-- [ ] Lengkapi runbook self-hosted (env, migrate, start, cek kesehatan).
-- [ ] Tambahkan contoh integrasi callback/enkripsi + observability checklist.
-- [ ] Pastikan acceptance criteria per-fase sudah terdokumentasi di satu file.
+- [x] Lengkapi runbook self-hosted (env, migrate, start, cek kesehatan).
+- [x] Tambahkan contoh integrasi callback/enkripsi + observability checklist.
+- [x] Pastikan acceptance criteria per-fase sudah terdokumentasi di satu file.

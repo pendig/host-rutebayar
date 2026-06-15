@@ -562,3 +562,49 @@ func parseStringMap(value string) map[string]string {
 	_ = json.Unmarshal([]byte(value), &vals)
 	return vals
 }
+
+// DeleteHost deletes a host and related dependencies (policy, products, provider accounts) in a transaction.
+func (s *SQLiteStore) DeleteHost(hostID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var orderCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM payment_orders WHERE host_id = ?`, hostID).Scan(&orderCount); err != nil {
+		return err
+	}
+	if orderCount > 0 {
+		return fmt.Errorf("cannot delete host with existing orders")
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM host_provider_accounts WHERE host_id = ?`, hostID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM products WHERE host_id = ?`, hostID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM host_fee_policies WHERE host_id = ?`, hostID); err != nil {
+		return err
+	}
+		
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE id = ?`, hostID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteProduct deletes a product catalog item.
+func (s *SQLiteStore) DeleteProduct(productID string) error {
+	_, err := s.db.Exec(`DELETE FROM products WHERE id = ?`, productID)
+	return err
+}
+
+// DeleteProviderAccount deletes a provider account config.
+func (s *SQLiteStore) DeleteProviderAccount(hostID, provider, env string) error {
+	_, err := s.db.Exec(`DELETE FROM host_provider_accounts WHERE host_id = ? AND provider = ? AND env = ?`, hostID, provider, env)
+	return err
+}
