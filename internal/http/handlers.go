@@ -107,6 +107,27 @@ func SetupMux(orchestrator *orchestration.Orchestrator) *http.ServeMux {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("/ui/host/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleUIHost(w, r, orchestrator)
+	})
+	mux.HandleFunc("/ui/product/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleUIProduct(w, r, orchestrator)
+	})
+	mux.HandleFunc("/ui/order/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleUIOrder(w, r, orchestrator)
+	})
 	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -226,6 +247,120 @@ func handleGetPayment(w http.ResponseWriter, r *http.Request, orchestrator *orch
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+func handleUIHost(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	hostID := strings.TrimPrefix(r.URL.Path, "/ui/host/")
+	if hostID == "" {
+		http.Error(w, "host id is required", http.StatusBadRequest)
+		return
+	}
+	host, err := orchestrator.GetHost(hostID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	products, err := orchestrator.ListProducts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	orders, err := orchestrator.ListOrders()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var hostProducts []domain.Product
+	var hostOrders []domain.PaymentOrder
+	for _, p := range products {
+		if p.HostID == hostID {
+			hostProducts = append(hostProducts, p)
+		}
+	}
+	for _, o := range orders {
+		if o.HostID == hostID {
+			hostOrders = append(hostOrders, o)
+		}
+	}
+	sort.Slice(hostProducts, func(i, j int) bool { return hostProducts[i].ID < hostProducts[j].ID })
+	sort.Slice(hostOrders, func(i, j int) bool { return hostOrders[i].Reference > hostOrders[j].Reference })
+
+	tmpl, err := template.New("uiHost").Parse(uiHostHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = tmpl.Execute(w, map[string]interface{}{
+		"Host":     host,
+		"Products": hostProducts,
+		"Orders":   hostOrders,
+	})
+}
+
+func handleUIProduct(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	productID := strings.TrimPrefix(r.URL.Path, "/ui/product/")
+	if productID == "" {
+		http.Error(w, "product id is required", http.StatusBadRequest)
+		return
+	}
+	products, err := orchestrator.ListProducts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var product domain.Product
+	var found bool
+	for _, candidate := range products {
+		if candidate.ID == productID {
+			product = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	tmpl, err := template.New("uiProduct").Parse(uiProductHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = tmpl.Execute(w, map[string]interface{}{
+		"Product": product,
+	})
+}
+
+func handleUIOrder(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	reference := strings.TrimPrefix(r.URL.Path, "/ui/order/")
+	if reference == "" {
+		http.Error(w, "reference is required", http.StatusBadRequest)
+		return
+	}
+	order, err := orchestrator.GetPayment(reference)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	ledger, err := orchestrator.GetLedger(reference)
+	hasLedger := true
+	if err != nil {
+		ledger = domain.PaymentOrderLedger{}
+		hasLedger = false
+	}
+	tmpl, err := template.New("uiOrder").Parse(uiOrderHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = tmpl.Execute(w, map[string]interface{}{
+		"Order":     order,
+		"Ledger":    ledger,
+		"HasLedger": hasLedger,
+	})
 }
 
 func handleWebhook(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
@@ -491,12 +626,12 @@ const dashboardHTML = `<!doctype html>
 	<h1>host-rutebayar self hosted</h1>
 	<p>Monitoring dan registrasi sederhana untuk host, produk, dan pembayaran.</p>
 	<div class="section">
-		<h2>Hosts</h2>
+	<h2>Hosts</h2>
 		<table>
 			<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
 			{{range .Hosts}}
 			<tr>
-				<td>{{.ID}}</td>
+				<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
 				<td>{{.Name}}</td>
 				<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
 				<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
@@ -512,7 +647,7 @@ const dashboardHTML = `<!doctype html>
 			<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
 			{{range .Products}}
 			<tr>
-				<td>{{.ID}}</td>
+				<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
 				<td>{{.HostID}}</td>
 				<td>{{.Name}}</td>
 				<td>{{.SKU}}</td>
@@ -531,7 +666,7 @@ const dashboardHTML = `<!doctype html>
 			<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
 			{{range .Orders}}
 			<tr>
-				<td>{{.Reference}}</td>
+				<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
 				<td>{{.Status}}</td>
 				<td>{{.HostID}}</td>
 				<td>{{.ProductID}}</td>
@@ -545,6 +680,167 @@ const dashboardHTML = `<!doctype html>
 			<tr><td colspan="9">Belum ada order.</td></tr>
 			{{end}}
 		</table>
+	</div>
+</body>
+</html>`
+
+const uiHostHTML = `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Host {{.Host.ID}}</title>
+	<style>
+		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: #f2f8ff; color: #15314b; }
+		table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
+		th { background: #1f3c5d; color: #fff; }
+		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
+		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
+		a { color: #1f4a91; }
+	</style>
+</head>
+<body>
+	<a href="/ui">← Dashboard</a>
+	<div class="section">
+		<h1>Host {{.Host.ID}}</h1>
+		<table>
+			<tr><th>Field</th><th>Value</th></tr>
+			<tr><td>ID</td><td>{{.Host.ID}}</td></tr>
+			<tr><td>Nama</td><td>{{.Host.Name}}</td></tr>
+			<tr><td>Notification Key</td><td><pre>{{.Host.NotificationKey}}</pre></td></tr>
+			<tr><td>Callback URLs</td><td><pre>{{range .Host.CallbackURLs}}{{.}} {{end}}</pre></td></tr>
+			<tr><td>Callback Allowlist</td><td><pre>{{range .Host.CallbackAllowlist}}{{.}} {{end}}</pre></td></tr>
+			<tr><td>Host Secret</td><td>{{.Host.HostSecret}}</td></tr>
+			<tr><td>Webhook Secret</td><td>{{.Host.WebhookSecret}}</td></tr>
+		</table>
+	</div>
+	<div class="section">
+		<h2>Produk</h2>
+		<table>
+			<tr><th>ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th></tr>
+			{{range .Products}}
+			<tr>
+				<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
+				<td>{{.Name}}</td>
+				<td>{{.SKU}}</td>
+				<td>{{.Price}}</td>
+				<td>{{.IsActive}}</td>
+			</tr>
+			{{else}}
+			<tr><td colspan="5">Belum ada produk.</td></tr>
+			{{end}}
+		</table>
+	</div>
+	<div class="section">
+		<h2>Orders</h2>
+		<table>
+			<tr><th>Reference</th><th>Status</th><th>Produk</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th></tr>
+			{{range .Orders}}
+			<tr>
+				<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
+				<td>{{.Status}}</td>
+				<td>{{.ProductID}}</td>
+				<td>{{.Provider}}</td>
+				<td>{{.GrossAmount}}</td>
+				<td>{{.HostFeeAmount}}</td>
+				<td>{{.NetAmount}}</td>
+			</tr>
+			{{else}}
+			<tr><td colspan="7">Belum ada order.</td></tr>
+			{{end}}
+		</table>
+	</div>
+</body>
+</html>`
+
+const uiProductHTML = `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Product {{.Product.ID}}</title>
+	<style>
+		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: #f2f8ff; color: #15314b; }
+		table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
+		th { background: #1f3c5d; color: #fff; }
+		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
+		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
+		a { color: #1f4a91; }
+	</style>
+</head>
+<body>
+	<a href="/ui">← Dashboard</a>
+	<div class="section">
+		<h1>Product {{.Product.ID}}</h1>
+		<table>
+			<tr><th>Field</th><th>Value</th></tr>
+			<tr><td>ID</td><td>{{.Product.ID}}</td></tr>
+			<tr><td>Host</td><td><a href="/ui/host/{{.Product.HostID}}">{{.Product.HostID}}</a></td></tr>
+			<tr><td>Nama</td><td>{{.Product.Name}}</td></tr>
+			<tr><td>SKU</td><td>{{.Product.SKU}}</td></tr>
+			<tr><td>Harga</td><td>{{.Product.Price}}</td></tr>
+			<tr><td>Active</td><td>{{.Product.IsActive}}</td></tr>
+			<tr><td>Policy Override</td><td>{{if .Product.FeePolicyOverride}}yes{{else}}no{{end}}</td></tr>
+		</table>
+	</div>
+	{{if .Product.FeePolicyOverride}}
+	<div class="section">
+		<h2>Policy override</h2>
+		<pre>{{printf "%#v" .Product.FeePolicyOverride}}</pre>
+	</div>
+	{{end}}
+</body>
+</html>`
+
+const uiOrderHTML = `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Order {{.Order.Reference}}</title>
+	<style>
+		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: #f2f8ff; color: #15314b; }
+		table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
+		th { background: #1f3c5d; color: #fff; }
+		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
+		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
+		a { color: #1f4a91; }
+	</style>
+</head>
+<body>
+	<a href="/ui">← Dashboard</a>
+	<div class="section">
+		<h1>Order {{.Order.Reference}}</h1>
+		<table>
+			<tr><th>Field</th><th>Value</th></tr>
+			<tr><td>Status</td><td>{{.Order.Status}}</td></tr>
+			<tr><td>Host</td><td><a href="/ui/host/{{.Order.HostID}}">{{.Order.HostID}}</a></td></tr>
+			<tr><td>Produk</td><td><a href="/ui/product/{{.Order.ProductID}}">{{.Order.ProductID}}</a></td></tr>
+			<tr><td>Provider</td><td>{{.Order.Provider}}</td></tr>
+			<tr><td>Env</td><td>{{.Order.Env}}</td></tr>
+			<tr><td>Reference</td><td>{{.Order.Reference}}</td></tr>
+			<tr><td>Gross</td><td>{{.Order.GrossAmount}}</td></tr>
+			<tr><td>Host Fee</td><td>{{.Order.HostFeeAmount}}</td></tr>
+			<tr><td>Provider Fee</td><td>{{.Order.ProviderFeeAmount}}</td></tr>
+			<tr><td>Net</td><td>{{.Order.NetAmount}}</td></tr>
+			<tr><td>Checkout URL</td><td><a href="{{.Order.ProviderCheckoutURL}}">{{if .Order.ProviderCheckoutURL}}open{{else}}-{{end}}</a></td></tr>
+		</table>
+	</div>
+	<div class="section">
+		<h2>Ledger</h2>
+		{{if .HasLedger}}
+		<table>
+			<tr><th>Field</th><th>Value</th></tr>
+			<tr><td>Policy Checksum</td><td>{{.Ledger.PolicyChecksum}}</td></tr>
+			<tr><td>Gross Amount</td><td>{{.Ledger.GrossAmount}}</td></tr>
+			<tr><td>Host Fee</td><td>{{.Ledger.HostFeeAmount}}</td></tr>
+			<tr><td>Provider Fee</td><td>{{.Ledger.ProviderFeeAmount}}</td></tr>
+			<tr><td>Net Amount</td><td>{{.Ledger.NetAmount}}</td></tr>
+			<tr><td>Idempotency Key</td><td>{{.Ledger.IdempotencyKey}}</td></tr>
+		</table>
+		{{else}}
+		<p>Ledger not found yet.</p>
+		{{end}}
 	</div>
 </body>
 </html>`
