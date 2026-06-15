@@ -892,6 +892,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request, orchestrator *orchest
 		http.Error(w, "provider is required", http.StatusBadRequest)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // Limit to 1MB
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		recordCallbackLog(uiCallbackDelivery{

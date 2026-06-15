@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -387,6 +388,9 @@ func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(ctx context.Context
 
 func isRetryableWebhookError(err error) bool {
 	if err == nil {
+		return false
+	}
+	if errors.Is(err, sql.ErrNoRows) {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
