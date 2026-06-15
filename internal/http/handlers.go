@@ -2,11 +2,14 @@ package httphandlers
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -133,7 +136,82 @@ type uiCallbackDelivery struct {
 var (
 	callbackLogMu sync.Mutex
 	callbackLogs  = []uiCallbackDelivery{}
+	uiSessionMu   sync.Mutex
+	uiSessions    = map[string]time.Time{}
 )
+
+const (
+	uiSessionCookieName = "host-rutebayar-admin-session"
+	uiSessionTTL        = 12 * time.Hour
+)
+
+func hasAdminUISession(r *http.Request) bool {
+	cookie, err := r.Cookie(uiSessionCookieName)
+	if err != nil {
+		return false
+	}
+	uiSessionMu.Lock()
+	defer uiSessionMu.Unlock()
+	expiresAt, ok := uiSessions[cookie.Value]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expiresAt) {
+		delete(uiSessions, cookie.Value)
+		return false
+	}
+	uiSessions[cookie.Value] = time.Now().Add(uiSessionTTL)
+	return true
+}
+
+func sanitizeUISessionNext(next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" || !strings.HasPrefix(next, "/") {
+		return "/ui"
+	}
+	return next
+}
+
+func generateUISessionToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func setAdminUISession(w http.ResponseWriter, token string) {
+	expiresAt := time.Now().Add(uiSessionTTL)
+	uiSessionMu.Lock()
+	uiSessions[token] = expiresAt
+	uiSessionMu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name:     uiSessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  expiresAt,
+		MaxAge:   int(uiSessionTTL.Seconds()),
+	})
+}
+
+func clearAdminUISession(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(uiSessionCookieName)
+	if err == nil {
+		uiSessionMu.Lock()
+		delete(uiSessions, cookie.Value)
+		uiSessionMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     uiSessionCookieName,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+	})
+}
 
 func recordCallbackLog(entry uiCallbackDelivery) {
 	callbackLogMu.Lock()
@@ -155,7 +233,32 @@ func listCallbackLogs() []uiCallbackDelivery {
 	return out
 }
 
-func SetupMux(orchestrator *orchestration.Orchestrator) *http.ServeMux {
+func SetupMux(orchestrator *orchestration.Orchestrator, adminPassword ...string) *http.ServeMux {
+	password := "admin123"
+	if len(adminPassword) > 0 {
+		password = strings.TrimSpace(adminPassword[0])
+		if password == "" {
+			password = "admin123"
+		}
+	}
+	requireAdminSession := func(handler http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if hasAdminUISession(r) {
+				handler(w, r)
+				return
+			}
+			if r.Method == http.MethodGet {
+				next := r.URL.Path
+				if r.URL.RawQuery != "" {
+					next += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, "/ui/login?next="+url.QueryEscape(next), http.StatusFound)
+				return
+			}
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -165,62 +268,76 @@ func SetupMux(orchestrator *orchestration.Orchestrator) *http.ServeMux {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
-	mux.HandleFunc("/ui/host/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ui/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleUILogin(w, r, password)
+	})
+	mux.HandleFunc("/ui/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleUILogout(w, r)
+	})
+	mux.HandleFunc("/ui/host/", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleUIHost(w, r, orchestrator)
-	})
-	mux.HandleFunc("/ui/product/", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/ui/product/", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleUIProduct(w, r, orchestrator)
-	})
-	mux.HandleFunc("/ui/order/", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/ui/order/", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleUIOrder(w, r, orchestrator)
-	})
-	mux.HandleFunc("/ui/callbacks", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/ui/callbacks", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleUICallbacks(w, r)
-	})
-	mux.HandleFunc("/ui/callbacks/replay", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/ui/callbacks/replay", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleReplayCallback(w, r, orchestrator)
-	})
-	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/ui", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleUI(w, r, orchestrator)
-	})
-	mux.HandleFunc("/admin/demo-seed", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/admin/demo-seed", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleDemoSeed(w, r, orchestrator)
-	})
-	mux.HandleFunc("/admin/test-payment", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/admin/test-payment", requireAdminSession(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleCreateTestPayment(w, r, orchestrator)
-	})
+	}))
 	mux.HandleFunc("/register/host", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -444,6 +561,50 @@ func handleUICallbacks(w http.ResponseWriter, r *http.Request) {
 	_ = tmpl.Execute(w, map[string]interface{}{
 		"Deliveries": logs,
 	})
+}
+
+func handleUILogin(w http.ResponseWriter, r *http.Request, adminPassword string) {
+	if hasAdminUISession(r) {
+		next := sanitizeUISessionNext(r.URL.Query().Get("next"))
+		http.Redirect(w, r, next, http.StatusFound)
+		return
+	}
+	tmpl, err := template.New("uiLogin").Parse(uiLoginHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if r.Method == http.MethodGet {
+		message := strings.TrimSpace(r.URL.Query().Get("error")) != ""
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = tmpl.Execute(w, map[string]interface{}{
+			"Next":    sanitizeUISessionNext(r.URL.Query().Get("next")),
+			"Message": message,
+		})
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	next := sanitizeUISessionNext(r.FormValue("next"))
+	password := strings.TrimSpace(r.FormValue("password"))
+	if password != adminPassword {
+		http.Redirect(w, r, "/ui/login?next="+url.QueryEscape(next)+"&error=1", http.StatusFound)
+		return
+	}
+	token, err := generateUISessionToken()
+	if err != nil {
+		http.Error(w, "unable to create session", http.StatusInternalServerError)
+		return
+	}
+	setAdminUISession(w, token)
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+func handleUILogout(w http.ResponseWriter, r *http.Request) {
+	clearAdminUISession(w, r)
+	http.Redirect(w, r, "/ui/login", http.StatusFound)
 }
 
 func handleReplayCallback(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
@@ -901,6 +1062,40 @@ func handleUI(w http.ResponseWriter, r *http.Request, orchestrator *orchestratio
 	})
 }
 
+const uiLoginHTML = `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Login Admin</title>
+	<style>
+		body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; color: #11293f; background: radial-gradient(circle at 12% 0%, #eef3ff 0, #e8f2ff 36%, #f5f7ff 100%); min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+		.login-shell { width: min(420px, 100%); background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 12px 30px rgba(15, 40, 73, 0.15); }
+		h1 { margin: 0 0 12px 0; font-size: 26px; color: #13345f; }
+		p { margin: 0 0 18px 0; color: #5e6d7f; }
+		label { display: block; margin-bottom: 14px; font-size: 14px; color: #214a6f; }
+		input { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 6px; border-radius: 10px; border: 1px solid #c7d6e2; }
+		button { width: 100%; padding: 10px; border: 0; border-radius: 10px; color: #fff; background: #1f4b7a; font-weight: 700; cursor: pointer; }
+		.error { color: #8c1f1f; background: #ffecec; border: 1px solid #ffc8c8; border-radius: 10px; padding: 8px 10px; margin-bottom: 12px; }
+		small { color: #6c7d96; display: block; margin-top: 12px; }
+	</style>
+</head>
+<body>
+	<div class="login-shell">
+		<h1>Login Admin</h1>
+		<p>Masukkan password untuk buka dashboard operasi self-hosted.</p>
+		{{if .Message}}<div class="error">Login gagal, coba lagi.</div>{{end}}
+		<form method="post" action="/ui/login">
+			<label>Password
+				<input type="password" name="password" autocomplete="current-password" required />
+			</label>
+			<input type="hidden" name="next" value="{{.Next}}" />
+			<button type="submit">Masuk</button>
+		</form>
+		<small>Default password bisa di-set via env <strong>HOST_RUTEBAYAR_ADMIN_PASSWORD</strong>.</small>
+	</div>
+</body>
+</html>`
+
 const dashboardHTML = `<!doctype html>
 <html>
 <head>
@@ -1151,6 +1346,7 @@ const dashboardHTML = `<!doctype html>
 				<a href="/ui#hosts">📋 Hosts</a>
 				<a href="/ui#products">🧩 Products</a>
 				<a href="/ui#orders">🧾 Orders</a>
+				<a href="/ui/logout">🚪 Logout</a>
 			</nav>
 			<p class="muted">Akses jalur ini untuk operasional lokal dan pemantauan checkout.</p>
 		</aside>
@@ -1427,82 +1623,137 @@ const uiHostHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>Host {{.Host.ID}}</title>
 	<style>
-		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: #f2f8ff; color: #15314b; }
+		:root { color-scheme: light; }
+		body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; color: #11293f; background: #f2f8ff; }
+		a { color: #1f4a91; }
+		.admin-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+		.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 20px; background: linear-gradient(160deg, #13345f, #183e73); color: #ecf3ff; }
+		.sidebar h2 { margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.3px; }
+		.sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+		.sidebar a { color: #eff5ff; text-decoration: none; font-size: 14px; border-radius: 9px; padding: 10px 12px; }
+		.sidebar a:hover { background: rgba(255, 255, 255, 0.12); }
+		.sidebar .active { background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+		.sidebar .muted { margin-top: 12px; opacity: 0.85; font-size: 12px; }
+		.content { padding: 16px 20px 24px 20px; overflow-x: auto; }
+		.section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
+		.section h2 { margin-top: 0; }
+		.back-link { display: inline-block; margin-bottom: 12px; }
 		table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
 		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
 		th { background: #1f3c5d; color: #fff; }
-		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
 		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
-		a { color: #1f4a91; }
+		.hero { padding: 24px; margin-bottom: 16px; border-radius: 18px; background: linear-gradient(135deg, rgba(19, 52, 95, 0.96), rgba(34, 92, 159, 0.92)); color: #eff5ff; box-shadow: 0 20px 34px rgba(16, 34, 59, 0.2); }
+		.hero h1 { margin: 0 0 8px 0; color: #fff; }
+		.subtle { color: #dce8f8; }
+		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+		.grid .card { background: #fff; border: 1px solid #d7e3ef; border-radius: 12px; padding: 14px; }
+		@media (max-width: 1024px) {
+			.admin-shell { grid-template-columns: 1fr; }
+			.sidebar { position: static; height: auto; display: flex; flex-wrap: wrap; gap: 16px; }
+			.sidebar nav { width: 100%; display: flex; flex-wrap: wrap; }
+			.sidebar nav a { padding: 8px 12px; }
+		}
 	</style>
 </head>
 <body>
-	<a href="/ui">← Dashboard</a>
-	<a href="/ui/callbacks">Lihat callback monitor</a>
-	<div class="section">
-		<h1>Host {{.Host.ID}}</h1>
-		<table>
-			<tr><th>Field</th><th>Value</th></tr>
-			<tr><td>ID</td><td>{{.Host.ID}}</td></tr>
-			<tr><td>Nama</td><td>{{.Host.Name}}</td></tr>
-			<tr><td>Notification Key</td><td><pre>{{.Host.NotificationKey}}</pre></td></tr>
-			<tr><td>Callback URLs</td><td><pre>{{range .Host.CallbackURLs}}{{.}} {{end}}</pre></td></tr>
-			<tr><td>Callback Allowlist</td><td><pre>{{range .Host.CallbackAllowlist}}{{.}} {{end}}</pre></td></tr>
-			<tr><td>Host Secret</td><td>{{.Host.HostSecret}}</td></tr>
-			<tr><td>Webhook Secret</td><td>{{.Host.WebhookSecret}}</td></tr>
-		</table>
-	</div>
-	<div class="section">
-		<h2>Produk</h2>
-		<table>
-			<tr><th>ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th></tr>
-			{{range .Products}}
-			<tr>
-				<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
-				<td>{{.Name}}</td>
-				<td>{{.SKU}}</td>
-				<td>{{.Price}}</td>
-				<td>{{.IsActive}}</td>
-			</tr>
-			{{else}}
-			<tr><td colspan="5">Belum ada produk.</td></tr>
-			{{end}}
-		</table>
-	</div>
-	<div class="section">
-		<h2>Orders</h2>
-		<table>
-			<tr><th>Reference</th><th>Status</th><th>Produk</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th></tr>
-			{{range .Orders}}
-			<tr>
-				<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
-				<td>{{.Status}}</td>
-				<td>{{.ProductID}}</td>
-				<td>{{.Provider}}</td>
-				<td>{{.GrossAmount}}</td>
-				<td>{{.HostFeeAmount}}</td>
-				<td>{{.NetAmount}}</td>
-			</tr>
-			{{else}}
-			<tr><td colspan="7">Belum ada order.</td></tr>
-			{{end}}
-		</table>
-	</div>
-	<div class="section">
-		<h2>Provider Accounts</h2>
-		<table>
-			<tr><th>Provider</th><th>Env</th><th>Credentials Hash</th><th>Public Config</th></tr>
-			{{range .Accounts}}
-			<tr>
-				<td>{{.Provider}}</td>
-				<td>{{.Env}}</td>
-				<td><pre>{{.CredentialsHash}}</pre></td>
-				<td><pre>{{printf "%#v" .PublicConfig}}</pre></td>
-			</tr>
-			{{else}}
-			<tr><td colspan="4">Belum ada provider account.</td></tr>
-			{{end}}
-		</table>
+	<div class="admin-shell">
+		<aside class="sidebar">
+			<h2>Host RuteBayar</h2>
+			<p class="muted">Dashboard Host Detail</p>
+			<nav>
+				<a href="/ui">🏠 Dashboard</a>
+				<a href="/ui/callbacks">🔁 Callback Monitor</a>
+				<a href="/ui#hosts" class="active">📋 Host / Produk / Orders</a>
+				<a href="/ui/logout">🚪 Logout</a>
+			</nav>
+			<p class="muted">Semua aksi operasional tetap tercatat dari halaman dashboard.</p>
+		</aside>
+		<main class="content">
+			<div class="hero">
+				<div>
+					<p class="subtle">Host detail</p>
+					<h1>{{.Host.ID}}</h1>
+					<p class="subtle">Informasi credential dan data operasional host.</p>
+				</div>
+				<a href="/ui" style="text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,0.2);padding:9px 14px;border-radius:10px;">← Kembali ke Dashboard</a>
+			</div>
+			<div class="grid">
+				<div class="card">
+					<strong>Nama host</strong><div>{{.Host.Name}}</div>
+				</div>
+				<div class="card">
+					<strong>Total produk</strong><div>{{len .Products}}</div>
+				</div>
+				<div class="card">
+					<strong>Total order</strong><div>{{len .Orders}}</div>
+				</div>
+			</div>
+			<div class="section">
+				<h2>Data host</h2>
+				<table>
+					<tr><th>Field</th><th>Value</th></tr>
+					<tr><td>ID</td><td>{{.Host.ID}}</td></tr>
+					<tr><td>Nama</td><td>{{.Host.Name}}</td></tr>
+					<tr><td>Notification Key</td><td><pre>{{.Host.NotificationKey}}</pre></td></tr>
+					<tr><td>Callback URLs</td><td><pre>{{range .Host.CallbackURLs}}{{.}} {{end}}</pre></td></tr>
+					<tr><td>Callback Allowlist</td><td><pre>{{range .Host.CallbackAllowlist}}{{.}} {{end}}</pre></td></tr>
+					<tr><td>Host Secret</td><td>{{.Host.HostSecret}}</td></tr>
+					<tr><td>Webhook Secret</td><td>{{.Host.WebhookSecret}}</td></tr>
+				</table>
+			</div>
+			<div class="section">
+				<h2>Produk</h2>
+				<table>
+					<tr><th>ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th></tr>
+					{{range .Products}}
+					<tr>
+						<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
+						<td>{{.Name}}</td>
+						<td>{{.SKU}}</td>
+						<td>{{.Price}}</td>
+						<td>{{.IsActive}}</td>
+					</tr>
+					{{else}}
+					<tr><td colspan="5">Belum ada produk.</td></tr>
+					{{end}}
+				</table>
+			</div>
+			<div class="section">
+				<h2>Orders</h2>
+				<table>
+					<tr><th>Reference</th><th>Status</th><th>Produk</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th></tr>
+					{{range .Orders}}
+					<tr>
+						<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
+						<td>{{.Status}}</td>
+						<td>{{.ProductID}}</td>
+						<td>{{.Provider}}</td>
+						<td>{{.GrossAmount}}</td>
+						<td>{{.HostFeeAmount}}</td>
+						<td>{{.NetAmount}}</td>
+					</tr>
+					{{else}}
+					<tr><td colspan="7">Belum ada order.</td></tr>
+					{{end}}
+				</table>
+			</div>
+			<div class="section">
+				<h2>Provider Accounts</h2>
+				<table>
+					<tr><th>Provider</th><th>Env</th><th>Credentials Hash</th><th>Public Config</th></tr>
+					{{range .Accounts}}
+					<tr>
+						<td>{{.Provider}}</td>
+						<td>{{.Env}}</td>
+						<td><pre>{{.CredentialsHash}}</pre></td>
+						<td><pre>{{printf "%#v" .PublicConfig}}</pre></td>
+					</tr>
+					{{else}}
+					<tr><td colspan="4">Belum ada provider account.</td></tr>
+					{{end}}
+				</table>
+			</div>
+		</main>
 	</div>
 </body>
 </html>`
@@ -1513,36 +1764,72 @@ const uiProductHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>Product {{.Product.ID}}</title>
 	<style>
-		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: #f2f8ff; color: #15314b; }
+		:root { color-scheme: light; }
+		body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; color: #11293f; background: #f2f8ff; }
+		a { color: #1f4a91; }
+		.admin-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+		.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 20px; background: linear-gradient(160deg, #13345f, #183e73); color: #ecf3ff; }
+		.sidebar h2 { margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.3px; }
+		.sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+		.sidebar a { color: #eff5ff; text-decoration: none; font-size: 14px; border-radius: 9px; padding: 10px 12px; }
+		.sidebar a:hover { background: rgba(255, 255, 255, 0.12); }
+		.sidebar .active { background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+		.sidebar .muted { margin-top: 12px; opacity: 0.85; font-size: 12px; }
+		.content { padding: 16px 20px 24px 20px; overflow-x: auto; }
+		.section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
 		table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
 		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
 		th { background: #1f3c5d; color: #fff; }
-		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
 		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
-		a { color: #1f4a91; }
+		.hero { padding: 24px; margin-bottom: 16px; border-radius: 18px; background: linear-gradient(135deg, rgba(19, 52, 95, 0.96), rgba(34, 92, 159, 0.92)); color: #eff5ff; box-shadow: 0 20px 34px rgba(16, 34, 59, 0.2); }
+		.hero h1 { margin: 0 0 8px 0; color: #fff; }
+		.subtle { color: #dce8f8; }
+		@media (max-width: 1024px) {
+			.admin-shell { grid-template-columns: 1fr; }
+			.sidebar { position: static; height: auto; display: flex; flex-wrap: wrap; gap: 16px; }
+			.sidebar nav { width: 100%; display: flex; flex-wrap: wrap; }
+			.sidebar nav a { padding: 8px 12px; }
+		}
 	</style>
 </head>
 <body>
-	<a href="/ui">← Dashboard</a>
-	<div class="section">
-		<h1>Product {{.Product.ID}}</h1>
-		<table>
-			<tr><th>Field</th><th>Value</th></tr>
-			<tr><td>ID</td><td>{{.Product.ID}}</td></tr>
-			<tr><td>Host</td><td><a href="/ui/host/{{.Product.HostID}}">{{.Product.HostID}}</a></td></tr>
-			<tr><td>Nama</td><td>{{.Product.Name}}</td></tr>
-			<tr><td>SKU</td><td>{{.Product.SKU}}</td></tr>
-			<tr><td>Harga</td><td>{{.Product.Price}}</td></tr>
-			<tr><td>Active</td><td>{{.Product.IsActive}}</td></tr>
-			<tr><td>Policy Override</td><td>{{if .Product.FeePolicyOverride}}yes{{else}}no{{end}}</td></tr>
-		</table>
+	<div class="admin-shell">
+		<aside class="sidebar">
+			<h2>Host RuteBayar</h2>
+			<p class="muted">Dashboard Product Detail</p>
+			<nav>
+				<a href="/ui">🏠 Dashboard</a>
+				<a href="/ui/callbacks">🔁 Callback Monitor</a>
+				<a href="/ui#products" class="active">🧩 Produk</a>
+				<a href="/ui/logout">🚪 Logout</a>
+			</nav>
+		</aside>
+		<main class="content">
+			<div class="hero">
+				<p class="subtle">Product detail</p>
+				<h1>{{.Product.ID}}</h1>
+				<p class="subtle">Lengkap dengan relasi host dan konfigurasi fee override.</p>
+			</div>
+			<div class="section">
+				<table>
+					<tr><th>Field</th><th>Value</th></tr>
+					<tr><td>ID</td><td>{{.Product.ID}}</td></tr>
+					<tr><td>Host</td><td><a href="/ui/host/{{.Product.HostID}}">{{.Product.HostID}}</a></td></tr>
+					<tr><td>Nama</td><td>{{.Product.Name}}</td></tr>
+					<tr><td>SKU</td><td>{{.Product.SKU}}</td></tr>
+					<tr><td>Harga</td><td>{{.Product.Price}}</td></tr>
+					<tr><td>Active</td><td>{{.Product.IsActive}}</td></tr>
+					<tr><td>Policy Override</td><td>{{if .Product.FeePolicyOverride}}yes{{else}}no{{end}}</td></tr>
+				</table>
+			</div>
+			{{if .Product.FeePolicyOverride}}
+			<div class="section">
+				<h2>Policy override</h2>
+				<pre>{{printf "%#v" .Product.FeePolicyOverride}}</pre>
+			</div>
+			{{end}}
+		</main>
 	</div>
-	{{if .Product.FeePolicyOverride}}
-	<div class="section">
-		<h2>Policy override</h2>
-		<pre>{{printf "%#v" .Product.FeePolicyOverride}}</pre>
-	</div>
-	{{end}}
 </body>
 </html>`
 
@@ -1552,49 +1839,86 @@ const uiOrderHTML = `<!doctype html>
 	<meta charset="utf-8"/>
 	<title>Order {{.Order.Reference}}</title>
 	<style>
-		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: #f2f8ff; color: #15314b; }
+		:root { color-scheme: light; }
+		body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; color: #11293f; background: #f2f8ff; }
+		a { color: #1f4a91; }
+		.admin-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+		.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 20px; background: linear-gradient(160deg, #13345f, #183e73); color: #ecf3ff; }
+		.sidebar h2 { margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.3px; }
+		.sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+		.sidebar a { color: #eff5ff; text-decoration: none; font-size: 14px; border-radius: 9px; padding: 10px 12px; }
+		.sidebar a:hover { background: rgba(255, 255, 255, 0.12); }
+		.sidebar .active { background: rgba(255, 255, 255, 0.2); font-weight: 700; }
+		.sidebar .muted { margin-top: 12px; opacity: 0.85; font-size: 12px; }
+		.content { padding: 16px 20px 24px 20px; overflow-x: auto; }
+		.section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
 		table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
 		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
 		th { background: #1f3c5d; color: #fff; }
-		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
 		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
-		a { color: #1f4a91; }
+		.hero { padding: 24px; margin-bottom: 16px; border-radius: 18px; background: linear-gradient(135deg, rgba(19, 52, 95, 0.96), rgba(34, 92, 159, 0.92)); color: #eff5ff; box-shadow: 0 20px 34px rgba(16, 34, 59, 0.2); }
+		.hero h1 { margin: 0 0 8px 0; color: #fff; }
+		.subtle { color: #dce8f8; }
+		@media (max-width: 1024px) {
+			.admin-shell { grid-template-columns: 1fr; }
+			.sidebar { position: static; height: auto; display: flex; flex-wrap: wrap; gap: 16px; }
+			.sidebar nav { width: 100%; display: flex; flex-wrap: wrap; }
+			.sidebar nav a { padding: 8px 12px; }
+		}
 	</style>
 </head>
 <body>
-	<a href="/ui">← Dashboard</a>
-	<div class="section">
-		<h1>Order {{.Order.Reference}}</h1>
-		<table>
-			<tr><th>Field</th><th>Value</th></tr>
-			<tr><td>Status</td><td>{{.Order.Status}}</td></tr>
-			<tr><td>Host</td><td><a href="/ui/host/{{.Order.HostID}}">{{.Order.HostID}}</a></td></tr>
-			<tr><td>Produk</td><td><a href="/ui/product/{{.Order.ProductID}}">{{.Order.ProductID}}</a></td></tr>
-			<tr><td>Provider</td><td>{{.Order.Provider}}</td></tr>
-			<tr><td>Env</td><td>{{.Order.Env}}</td></tr>
-			<tr><td>Reference</td><td>{{.Order.Reference}}</td></tr>
-			<tr><td>Gross</td><td>{{.Order.GrossAmount}}</td></tr>
-			<tr><td>Host Fee</td><td>{{.Order.HostFeeAmount}}</td></tr>
-			<tr><td>Provider Fee</td><td>{{.Order.ProviderFeeAmount}}</td></tr>
-			<tr><td>Net</td><td>{{.Order.NetAmount}}</td></tr>
-			<tr><td>Checkout URL</td><td><a href="{{.Order.ProviderCheckoutURL}}">{{if .Order.ProviderCheckoutURL}}open{{else}}-{{end}}</a></td></tr>
-		</table>
-	</div>
-	<div class="section">
-		<h2>Ledger</h2>
-		{{if .HasLedger}}
-		<table>
-			<tr><th>Field</th><th>Value</th></tr>
-			<tr><td>Policy Checksum</td><td>{{.Ledger.PolicyChecksum}}</td></tr>
-			<tr><td>Gross Amount</td><td>{{.Ledger.GrossAmount}}</td></tr>
-			<tr><td>Host Fee</td><td>{{.Ledger.HostFeeAmount}}</td></tr>
-			<tr><td>Provider Fee</td><td>{{.Ledger.ProviderFeeAmount}}</td></tr>
-			<tr><td>Net Amount</td><td>{{.Ledger.NetAmount}}</td></tr>
-			<tr><td>Idempotency Key</td><td>{{.Ledger.IdempotencyKey}}</td></tr>
-		</table>
-		{{else}}
-		<p>Ledger not found yet.</p>
-		{{end}}
+	<div class="admin-shell">
+		<aside class="sidebar">
+			<h2>Host RuteBayar</h2>
+			<p class="muted">Dashboard Order Detail</p>
+			<nav>
+				<a href="/ui">🏠 Dashboard</a>
+				<a href="/ui/callbacks">🔁 Callback Monitor</a>
+				<a href="/ui#orders" class="active">🧾 Orders</a>
+				<a href="/ui/logout">🚪 Logout</a>
+			</nav>
+		</aside>
+		<main class="content">
+			<div class="hero">
+				<p class="subtle">Order detail</p>
+				<h1>{{.Order.Reference}}</h1>
+				<p class="subtle">Riwayat status dan data settlement untuk transaksi ini.</p>
+			</div>
+			<div class="section">
+				<h2>Informasi order</h2>
+				<table>
+					<tr><th>Field</th><th>Value</th></tr>
+					<tr><td>Status</td><td>{{.Order.Status}}</td></tr>
+					<tr><td>Host</td><td><a href="/ui/host/{{.Order.HostID}}">{{.Order.HostID}}</a></td></tr>
+					<tr><td>Produk</td><td><a href="/ui/product/{{.Order.ProductID}}">{{.Order.ProductID}}</a></td></tr>
+					<tr><td>Provider</td><td>{{.Order.Provider}}</td></tr>
+					<tr><td>Env</td><td>{{.Order.Env}}</td></tr>
+					<tr><td>Reference</td><td>{{.Order.Reference}}</td></tr>
+					<tr><td>Gross</td><td>{{.Order.GrossAmount}}</td></tr>
+					<tr><td>Host Fee</td><td>{{.Order.HostFeeAmount}}</td></tr>
+					<tr><td>Provider Fee</td><td>{{.Order.ProviderFeeAmount}}</td></tr>
+					<tr><td>Net</td><td>{{.Order.NetAmount}}</td></tr>
+					<tr><td>Checkout URL</td><td><a href="{{.Order.ProviderCheckoutURL}}">{{if .Order.ProviderCheckoutURL}}open{{else}}-{{end}}</a></td></tr>
+				</table>
+			</div>
+			<div class="section">
+				<h2>Ledger</h2>
+				{{if .HasLedger}}
+				<table>
+					<tr><th>Field</th><th>Value</th></tr>
+					<tr><td>Policy Checksum</td><td>{{.Ledger.PolicyChecksum}}</td></tr>
+					<tr><td>Gross Amount</td><td>{{.Ledger.GrossAmount}}</td></tr>
+					<tr><td>Host Fee</td><td>{{.Ledger.HostFeeAmount}}</td></tr>
+					<tr><td>Provider Fee</td><td>{{.Ledger.ProviderFeeAmount}}</td></tr>
+					<tr><td>Net Amount</td><td>{{.Ledger.NetAmount}}</td></tr>
+					<tr><td>Idempotency Key</td><td>{{.Ledger.IdempotencyKey}}</td></tr>
+				</table>
+				{{else}}
+				<p>Ledger not found yet.</p>
+				{{end}}
+			</div>
+		</main>
 	</div>
 </body>
 </html>`
@@ -1694,6 +2018,7 @@ const uiCallbacksHTML = `<!doctype html>
 				<a href="/ui#hosts">📋 Hosts</a>
 				<a href="/ui#products">🧩 Products</a>
 				<a href="/ui#orders">🧾 Orders</a>
+				<a href="/ui/logout">🚪 Logout</a>
 			</nav>
 			<p class="muted">Monitor untuk delivery callback dan replay event.</p>
 		</aside>

@@ -27,7 +27,7 @@ func main() {
 	}
 
 	orchestrator := orchestration.NewOrchestratorWithStore(store, gateway.DefaultGateway())
-	serviceMux := httphandlers.SetupMux(orchestrator)
+	serviceMux := httphandlers.SetupMux(orchestrator, cfg.AdminPassword)
 	appMux := serviceMux
 	trimmedUpstreamURL := strings.TrimSpace(cfg.UpstreamURL)
 	if trimmedUpstreamURL != "" {

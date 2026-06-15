@@ -79,6 +79,15 @@ Repo ini ditujukan untuk membuat model seperti ini:
 - `sandbox`: dipakai untuk testing host + integration.
 - `production`: environment sesungguhnya, terpisah key/credential dan base URL.
 
+## Login dashboard
+
+Dashboard operasi di `/ui` akan mengarahkan ke `/ui/login` jika belum autentikasi.
+Default password login adalah `admin123`, namun sebaiknya diganti lewat:
+
+- `HOST_RUTEBAYAR_ADMIN_PASSWORD`
+
+Catatan keamanan: jangan pernah hardcode password ini ke source/docs publik.
+
 ## Konfigurasi runtime
 
 - `HOST_RUTEBAYAR_ENV` (default `development`)
@@ -87,6 +96,7 @@ Repo ini ditujukan untuk membuat model seperti ini:
 - `HOST_RUTEBAYAR_TIMEOUT` (default `10s`)
 - `HOST_RUTEBAYAR_DATABASE_DSN` (default `file:host-rutebayar.db?_pragma=foreign_keys(ON)`)
 - `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` (opsional) — saat diisi, path `/host/{id}/payments...` akan diproksi ke upstream rute-bayar (`/api/v1/...`).
+- `HOST_RUTEBAYAR_ADMIN_PASSWORD` (default `admin123`) — password login untuk dashboard.
 
 ## Security checklist awal
 

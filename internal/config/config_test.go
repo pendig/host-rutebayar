@@ -11,6 +11,7 @@ func TestLoadDefault(t *testing.T) {
 	t.Setenv("HOST_RUTEBAYAR_PORT", "18123")
 	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "10s")
 	t.Setenv("HOST_RUTEBAYAR_DATABASE_DSN", "file:host-rutebayar.db?_pragma=foreign_keys(ON)")
+	t.Setenv("HOST_RUTEBAYAR_ADMIN_PASSWORD", "admin123")
 
 	cfg := Load()
 	if cfg.Env != "development" {
@@ -28,6 +29,9 @@ func TestLoadDefault(t *testing.T) {
 	if cfg.DBDSN == "" {
 		t.Fatalf("expected default DBDSN set")
 	}
+	if cfg.AdminPassword != "admin123" {
+		t.Fatalf("expected default AdminPassword=admin123, got %q", cfg.AdminPassword)
+	}
 }
 
 func TestLoadWithEnv(t *testing.T) {
@@ -36,10 +40,14 @@ func TestLoadWithEnv(t *testing.T) {
 	t.Setenv("HOST_RUTEBAYAR_PORT", "9000")
 	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "2s")
 	t.Setenv("HOST_RUTEBAYAR_DATABASE_DSN", "file:test.db")
+	t.Setenv("HOST_RUTEBAYAR_ADMIN_PASSWORD", "super-secret-admin")
 
 	cfg := Load()
 	if cfg.Env != "production" || cfg.Host != "0.0.0.0" || cfg.Port != 9000 || cfg.Timeout != 2*time.Second || cfg.DBDSN != "file:test.db" {
 		t.Fatalf("loaded config does not match overrides: %+v", cfg)
+	}
+	if cfg.AdminPassword != "super-secret-admin" {
+		t.Fatalf("expected AdminPassword override, got %q", cfg.AdminPassword)
 	}
 	if cfg.ListenAddress() != "0.0.0.0:9000" {
 		t.Fatalf("unexpected listen address: %s", cfg.ListenAddress())

@@ -15,6 +15,8 @@ export HOST_RUTEBAYAR_HOST=127.0.0.1
 export HOST_RUTEBAYAR_PORT=18123
 export HOST_RUTEBAYAR_TIMEOUT=10s
 export HOST_RUTEBAYAR_DATABASE_DSN='file:host-rutebayar.db?_pragma=foreign_keys(ON)'
+# Password dashboard admin (opsional, default: admin123)
+# export HOST_RUTEBAYAR_ADMIN_PASSWORD='change-me'
 # Opsional
 # export HOST_RUTEBAYAR_UPSTREAM_BASE_URL=http://127.0.0.1:8080
 ```
@@ -27,7 +29,7 @@ go run ./cmd/host-rutebayar
 
 Akses:
 - Health check: `curl http://127.0.0.1:18123/health`
-- Dashboard: `http://127.0.0.1:18123/ui`
+- Dashboard: `http://127.0.0.1:18123/ui` (akan redirect ke `http://127.0.0.1:18123/ui/login`)
 
 ## 4. Inisialisasi data (minimal)
 
