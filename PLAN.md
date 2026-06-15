@@ -12,18 +12,26 @@
 
 - [ ] `Host`:
   - id, name, callback_url, notification_key.
+- [ ] `FeePolicy`:
+  - scope: host default (`host_id`) + optional product override.
+  - fields: type (`percent|fixed|free`), value, currency, rounding_rule, effective_from/until.
 - [ ] `Product`:
   - id, host_id, name, sku, price, is_active, metadata.
+  - support `fee_policy_override` (opsional) untuk override default host.
 - [ ] `HostProviderAccount`:
   - per-host credentials map (xendit/midtrans/doku/ipaymu), env sandbox/prod.
 - [ ] `PaymentOrder`:
-  - host_id, product_id, provider, env, reference, status, amount, buyer_ref.
+  - host_id, product_id, provider, env, reference, status, amount, fee_amount, net_amount, buyer_ref.
 - [ ] `WebhookRoute`:
   - event mapping + retry policy ke host endpoint.
 
 ## Phase 2 - Orchestration Engine
 
 - [ ] SDK/helper untuk website host membuat order.
+- [ ] Kalkulasi fee saat pembuatan order:
+  - Terapkan fee berdasarkan `Product` override jika ada, fallback `Host` default.
+  - Validasi nilai fee (`percent` > 0, `free` = 0, fixed tidak negatif, optional cap/min).
+  - Simpan `fee_amount` dan `net_amount` ke `PaymentOrder`.
 - [ ] Endpoint `POST /payments` membuat internal order + pilih provider.
 - [ ] Endpoint `GET /payments/{ref}` untuk status.
 - [ ] Endpoint callback untuk webhook provider:
@@ -31,6 +39,7 @@
   - parse event
   - reconcile status
   - push event terenkripsi ke callback host.
+  - kirim detail gross/fee/net + checksum policy version untuk audit.
 
 ## Phase 3 - Security-first hardening
 

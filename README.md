@@ -8,11 +8,23 @@ Repo ini ditujukan untuk membuat model seperti ini:
 
 - Host mendaftar dan membuat produk yang dijual.
 - Host menentukan produk yang aktif.
+- Host menentukan kebijakan fee untuk transaksi (persen/fixed) per produk; termasuk boleh `0` (gratis).
 - Host mengatur environment `sandbox` dan `production`.
 - Saat ada pembayaran, host-bayar/website membuat transaksi melalui host-rutebayar.
 - host-rutebayar menyimpan mapping pesanan dan membangun request ke gateway.
 - Data pembeli (buyer) tetap dienkripsi dan tidak dipakai untuk kebutuhan internal gateway langsung.
 - Webhook dari gateway diverifikasi, lalu diteruskan terenkripsi ke website host sesuai produk.
+
+## Model fee host
+
+- Fee bisa diatur per-host sebagai default policy.
+- Host juga bisa override fee per-produk.
+- Tipe fee:
+  - `percent` (contoh: `2.5%`)
+  - `fixed` (contoh: `Rp 1.000`)
+  - `free` (`0`, tidak dipungut fee)
+- Fee diproses dari nominal pembayaran sesuai rounding policy yang didokumentasikan (mis. 0 desimal untuk IDR).
+- Fee bukan domain `rute-bayar`; host-rutebayar sebagai orchestrator menentukan net amount yang diteruskan ke host website/merchant.
 
 ## Scope awal (v0)
 
@@ -35,6 +47,7 @@ Repo ini ditujukan untuk membuat model seperti ini:
 4. host-rutebayar memanggil provider (via wrapper adapter) untuk mendapatkan URL/payment reference.
 5. Webhook provider masuk ke host-rutebayar, diverifikasi, lalu dibaca dari mapping.
 6. host-rutebayar mengirimkan event terenkripsi ke endpoint callback website host.
+7. host-rutebayar memproses fee sesuai policy host/product, lalu event final disertakan detail komisi dan gross/net amount.
 
 ## Konsep environment
 
@@ -49,6 +62,7 @@ Repo ini ditujukan untuk membuat model seperti ini:
 - Enkripsi payload callback ke website host (atau signed payload + expiry).
 - Idempotency untuk webhook (mencegah double-processing).
 - Audit log untuk create/payment/webhook events.
+- Fee policy diverifikasi dan ditandatangani agar tidak bisa diubah di sisi client selama transaksinya.
 
 ## Rencana kerja
 
