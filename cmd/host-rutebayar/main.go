@@ -15,6 +15,24 @@ import (
 
 func main() {
 	cfg := config.Load()
+	adminPassword := strings.TrimSpace(cfg.AdminPassword)
+	isLoopbackHost := cfg.Host == "127.0.0.1" || strings.EqualFold(cfg.Host, "localhost") || cfg.Host == "::1"
+	isNonDevelopment := !strings.EqualFold(cfg.Env, "development") && !strings.EqualFold(cfg.Env, "dev")
+	if adminPassword == "" {
+		if isLoopbackHost && strings.EqualFold(cfg.Env, "development") {
+			adminPassword = "admin123"
+			log.Println("No admin password configured; defaulting to admin123 for local development.")
+		} else {
+			log.Fatal("missing HOST_RUTEBAYAR_ADMIN_PASSWORD; set a non-default value before running outside local development")
+		}
+	}
+	if adminPassword == "admin123" && isNonDevelopment {
+		if !isLoopbackHost {
+			log.Fatal("insecure default admin password outside local development; set HOST_RUTEBAYAR_ADMIN_PASSWORD and avoid exposing default credentials")
+		}
+		log.Println("WARNING: running outside production-safe mode with default admin password. set HOST_RUTEBAYAR_ADMIN_PASSWORD before public exposure")
+	}
+
 	store, err := storage.NewSQLiteStore(cfg.DBDSN)
 	if err != nil {
 		log.Fatal(err)
@@ -27,7 +45,7 @@ func main() {
 	}
 
 	orchestrator := orchestration.NewOrchestratorWithStore(store, gateway.DefaultGateway())
-	serviceMux := httphandlers.SetupMux(orchestrator, cfg.AdminPassword)
+	serviceMux := httphandlers.SetupMux(orchestrator, adminPassword)
 	appMux := serviceMux
 	trimmedUpstreamURL := strings.TrimSpace(cfg.UpstreamURL)
 	if trimmedUpstreamURL != "" {

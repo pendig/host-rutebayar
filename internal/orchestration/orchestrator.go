@@ -342,15 +342,23 @@ func webhookIdempotencyKey(reference, provider, idempotencyKey string) string {
 
 // ReconcileWebhookWithRetry applies retry policy to webhook reconciliation simulation.
 func (s *Orchestrator) ReconcileWebhookWithRetry(reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, error) {
-	statusResp, _, err := s.ReconcileWebhookWithRetryWithAttempts(reference, provider, status, idempotencyKey)
+	statusResp, _, err := s.ReconcileWebhookWithRetryWithAttempts(context.Background(), reference, provider, status, idempotencyKey)
 	return statusResp, err
 }
 
-func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, int, error) {
+func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(ctx context.Context, reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, int, error) {
 	var statusResp domain.PaymentOrderStatus
 	var err error
 	attempts := 0
 	for attempt := 1; attempt <= s.retryPolicy.MaxAttempts; attempt++ {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return "", attempts, ctx.Err()
+			default:
+			}
+		}
+
 		attempts = attempt
 		statusResp, err = s.ReconcileWebhook(reference, provider, status, idempotencyKey)
 		if err == nil {
@@ -364,6 +372,14 @@ func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(reference, provider
 		}
 		s.metrics.Inc("payments.webhook.retry")
 		delay := s.retryPolicy.DelayForAttempt(attempt)
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return "", attempts, ctx.Err()
+			case <-time.After(delay):
+			}
+			continue
+		}
 		time.Sleep(delay)
 	}
 	return statusResp, attempts, err
@@ -374,6 +390,12 @@ func isRetryableWebhookError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "not found") {
+		return false
+	}
+	if strings.Contains(msg, "no rows") {
+		return false
+	}
 	if strings.Contains(msg, "provider mismatch") {
 		return false
 	}

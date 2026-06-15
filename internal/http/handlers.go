@@ -167,7 +167,11 @@ func hasAdminUISession(r *http.Request) bool {
 
 func sanitizeUISessionNext(next string) string {
 	next = strings.TrimSpace(next)
-	if next == "" || !strings.HasPrefix(next, "/") {
+	if next == "" || strings.HasPrefix(next, "//") || !strings.HasPrefix(next, "/") {
+		return "/ui"
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.Host != "" || u.Scheme != "" {
 		return "/ui"
 	}
 	return next
@@ -202,6 +206,7 @@ func setAdminUISession(w http.ResponseWriter, token string) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 		MaxAge:   int(uiSessionTTL.Seconds()),
@@ -219,6 +224,7 @@ func clearAdminUISession(w http.ResponseWriter, r *http.Request) {
 		Name:     uiSessionCookieName,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
@@ -715,23 +721,7 @@ func handleReplayCallback(w http.ResponseWriter, r *http.Request, orchestrator *
 		http.Error(w, "reference, provider, status, and idempotency_key are required", http.StatusBadRequest)
 		return
 	}
-	signature := strings.TrimSpace(r.Header.Get("X-Webhook-Signature"))
-	if signature != "" {
-		if err := authorizeWebhookSignature(r, orchestrator, req.Reference, body); err != nil {
-			recordCallbackLog(uiCallbackDelivery{
-				At:             time.Now().UTC().Format(time.RFC3339),
-				Reference:      req.Reference,
-				Provider:       req.Provider,
-				Status:         req.Status,
-				Result:         "replay-failed",
-				IdempotencyKey: req.IdempotencyKey,
-				Error:          err.Error(),
-			})
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-	}
-	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(req.Reference, req.Provider, req.Status, req.IdempotencyKey)
+	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(r.Context(), req.Reference, req.Provider, req.Status, req.IdempotencyKey)
 	if err != nil {
 		recordCallbackLog(uiCallbackDelivery{
 			At:             time.Now().UTC().Format(time.RFC3339),
@@ -938,19 +928,10 @@ func handleWebhook(w http.ResponseWriter, r *http.Request, orchestrator *orchest
 		return
 	}
 	if err := authorizeWebhookSignature(r, orchestrator, payload.Reference, body); err != nil {
-		recordCallbackLog(uiCallbackDelivery{
-			At:             time.Now().UTC().Format(time.RFC3339),
-			Reference:      payload.Reference,
-			Provider:       provider,
-			Status:         payload.Status,
-			Result:         "failed",
-			IdempotencyKey: payload.IdempotencyKey,
-			Error:          err.Error(),
-		})
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(payload.Reference, provider, payload.Status, payload.IdempotencyKey)
+	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(r.Context(), payload.Reference, provider, payload.Status, payload.IdempotencyKey)
 	if err != nil {
 		recordCallbackLog(uiCallbackDelivery{
 			At:             time.Now().UTC().Format(time.RFC3339),
@@ -1129,7 +1110,8 @@ func isNotFoundErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "not found")
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "not found") || strings.Contains(errStr, "no rows")
 }
 
 func authorizeHostSecret(r *http.Request, orchestrator *orchestration.Orchestrator, hostID string) error {

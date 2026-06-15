@@ -15,7 +15,7 @@ export HOST_RUTEBAYAR_HOST=127.0.0.1
 export HOST_RUTEBAYAR_PORT=18123
 export HOST_RUTEBAYAR_TIMEOUT=10s
 export HOST_RUTEBAYAR_DATABASE_DSN='file:host-rutebayar.db?_pragma=foreign_keys(ON)'
-# Password dashboard admin (opsional, default: admin123)
+# Password dashboard admin (opsional untuk local dev; default: admin123)
 # export HOST_RUTEBAYAR_ADMIN_PASSWORD='change-me'
 # Opsional
 # export HOST_RUTEBAYAR_UPSTREAM_BASE_URL=http://127.0.0.1:8080
@@ -33,13 +33,18 @@ Akses:
 
 ## 4. Inisialisasi data (minimal)
 
-Untuk demo cepat dari browser:
+Untuk bootstrap data demo dari CLI, login dulu lewat dashboard atau endpoint UI login supaya session admin tersedia.
 
 ```bash
-curl -X POST http://127.0.0.1:18123/admin/demo-seed \
+curl -sS -c /tmp/hrb.session -X POST http://127.0.0.1:18123/ui/login \
+  --data "password=admin123&next=%2Fui"
+
+curl -sS -b /tmp/hrb.session -X POST http://127.0.0.1:18123/admin/demo-seed \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
+
+Catatan: ganti password admin bila diperlukan (lihat bagian [8. Login dashboard](#8-login-dashboard)).
 
 Atau buat manual:
 
