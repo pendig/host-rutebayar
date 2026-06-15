@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -41,7 +42,8 @@ func (c *Client) CreatePayment(ctx context.Context, req CreatePaymentRequest) (C
 	if err != nil {
 		return CreatePaymentResponse{}, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/host/"+req.HostID+"/payments", bytes.NewReader(payload))
+	escapedHostID := url.PathEscape(req.HostID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/host/"+escapedHostID+"/payments", bytes.NewReader(payload))
 	if err != nil {
 		return CreatePaymentResponse{}, err
 	}
@@ -63,7 +65,9 @@ func (c *Client) CreatePayment(ctx context.Context, req CreatePaymentRequest) (C
 
 func (c *Client) GetPayment(ctx context.Context, hostID, reference string) (PaymentStatus, error) {
 	// host-scoped endpoint via proxy route helper
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/host/"+hostID+"/payments/"+reference, nil)
+	escapedHostID := url.PathEscape(hostID)
+	escapedReference := url.PathEscape(reference)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/host/"+escapedHostID+"/payments/"+escapedReference, nil)
 	if err != nil {
 		return PaymentStatus{}, err
 	}

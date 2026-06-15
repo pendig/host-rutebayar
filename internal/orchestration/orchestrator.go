@@ -392,7 +392,7 @@ func (s *Orchestrator) RegisterProviderAccount(account domain.HostProviderAccoun
 	if s.store != nil {
 		return s.store.UpsertProviderAccount(account)
 	}
-	s.registry.HostProviderAccts[account.HostID] = append(s.filterExistingAccounts(s.registry.HostProviderAccts[account.HostID], account), account)
+	s.registry.HostProviderAccts[account.HostID] = s.filterExistingAccounts(s.registry.HostProviderAccts[account.HostID], account)
 	return nil
 }
 

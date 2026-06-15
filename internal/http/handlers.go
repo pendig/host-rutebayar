@@ -285,6 +285,7 @@ func handleRegisterHost(w http.ResponseWriter, r *http.Request, orchestrator *or
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(registerResponse{ID: req.ID, Message: "host registered"})
 }
@@ -331,6 +332,7 @@ func handleRegisterProduct(w http.ResponseWriter, r *http.Request, orchestrator 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(registerResponse{ID: req.ID, Message: "product registered"})
 }
@@ -363,6 +365,7 @@ func handleRegisterProviderAccount(w http.ResponseWriter, r *http.Request, orche
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(registerResponse{ID: req.HostID, Message: "provider account registered"})
 }
@@ -394,6 +397,7 @@ func handleRegisterHostPolicy(w http.ResponseWriter, r *http.Request, orchestrat
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(registerResponse{ID: req.HostID, Message: "host policy registered"})
 }
