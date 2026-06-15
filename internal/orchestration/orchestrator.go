@@ -655,3 +655,70 @@ func newReference() string {
 	_, _ = rand.Read(buf)
 	return fmt.Sprintf("ord-%d-%s", time.Now().UnixNano(), hex.EncodeToString(buf))
 }
+
+// DeleteHost removes host configuration and related dependencies.
+func (s *Orchestrator) DeleteHost(hostID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		type hostDeleter interface {
+			DeleteHost(id string) error
+		}
+		if hd, ok := s.store.(hostDeleter); ok {
+			return hd.DeleteHost(hostID)
+		}
+		return errors.New("underlying store does not support host deletion")
+	}
+	delete(s.registry.Hosts, hostID)
+	delete(s.registry.HostPolicies, hostID)
+	delete(s.registry.HostProviderAccts, hostID)
+	for k, v := range s.registry.Products {
+		if v.HostID == hostID {
+			delete(s.registry.Products, k)
+		}
+	}
+	return nil
+}
+
+// DeleteProduct removes product config.
+func (s *Orchestrator) DeleteProduct(productID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		type productDeleter interface {
+			DeleteProduct(id string) error
+		}
+		if pd, ok := s.store.(productDeleter); ok {
+			return pd.DeleteProduct(productID)
+		}
+		return errors.New("underlying store does not support product deletion")
+	}
+	delete(s.registry.Products, productID)
+	return nil
+}
+
+// DeleteProviderAccount removes host provider account configs.
+func (s *Orchestrator) DeleteProviderAccount(hostID, provider, env string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		type providerDeleter interface {
+			DeleteProviderAccount(hostID, provider, env string) error
+		}
+		if pd, ok := s.store.(providerDeleter); ok {
+			return pd.DeleteProviderAccount(hostID, provider, env)
+		}
+		return errors.New("underlying store does not support provider account deletion")
+	}
+	accts := s.registry.HostProviderAccts[hostID]
+	filtered := accts[:0]
+	for _, acct := range accts {
+		if acct.Provider == provider && acct.Env == env {
+			continue
+		}
+		filtered = append(filtered, acct)
+	}
+	s.registry.HostProviderAccts[hostID] = filtered
+	return nil
+}
+
