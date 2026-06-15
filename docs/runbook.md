@@ -2,7 +2,8 @@
 
 ## 1. Prasyarat
 
-- Go 1.25.11+ pada mesin operasi.
+- Go 1.23+ pada mesin operasi.
+- Untuk non-local/prod, gunakan password admin non-default.
 - Direktori kerja yang dapat menulis file `host-rutebayar.db`.
 - Kunci kredensial `host_secret` dan `webhook_secret` siap per-host.
 - (Opsional) upstream rute-bayar bila pakai mode proxy host-scoped.
@@ -15,8 +16,7 @@ export HOST_RUTEBAYAR_HOST=127.0.0.1
 export HOST_RUTEBAYAR_PORT=18123
 export HOST_RUTEBAYAR_TIMEOUT=10s
 export HOST_RUTEBAYAR_DATABASE_DSN='file:host-rutebayar.db?_pragma=foreign_keys(ON)'
-# Password dashboard admin (opsional untuk local dev; default: admin123)
-# export HOST_RUTEBAYAR_ADMIN_PASSWORD='change-me'
+export HOST_RUTEBAYAR_ADMIN_PASSWORD='change-me'
 # Opsional
 # export HOST_RUTEBAYAR_UPSTREAM_BASE_URL=http://127.0.0.1:8080
 ```
@@ -30,14 +30,19 @@ go run ./cmd/host-rutebayar
 Akses:
 - Health check: `curl http://127.0.0.1:18123/health`
 - Dashboard: `http://127.0.0.1:18123/ui` (akan redirect ke `http://127.0.0.1:18123/ui/login`)
+- Callback monitor: `http://127.0.0.1:18123/ui/callbacks`
 
 ## 4. Inisialisasi data (minimal)
 
 Untuk bootstrap data demo dari CLI, login dulu lewat dashboard atau endpoint UI login supaya session admin tersedia.
 
 ```bash
+ADMIN_PASSWORD="${HOST_RUTEBAYAR_ADMIN_PASSWORD:-admin123}"
+```
+
+```bash
 curl -sS -c /tmp/hrb.session -X POST http://127.0.0.1:18123/ui/login \
-  --data "password=admin123&next=%2Fui"
+  --data "password=${ADMIN_PASSWORD}&next=%2Fui"
 
 curl -sS -b /tmp/hrb.session -X POST http://127.0.0.1:18123/admin/demo-seed \
   -H "Content-Type: application/json" \
@@ -79,12 +84,13 @@ Lalu cek status dengan `reference` dari response.
 
 - Pantau dashboard operasional di `http://127.0.0.1:18123/ui`.
 - Pantau callback monitor/retry di `http://127.0.0.1:18123/ui/callbacks`.
+- Lakukan replay callback manual dari UI bila diperlukan.
 - Pantau `go test ./...` di setiap perubahan.
 - Backup DB secara berkala:
   - `sqlite3 host-rutebayar.db ".backup 'host-rutebayar.db.$(date +%F_%H%M%S)'"`
   - atau `cp` hanya aman saat proses benar-benar tidak menulis.
 - Restart service saat mengubah credential policy/akun host.
-- Verifikasi webhook callback endpoint aktif dari monitor uptime host.
+- Verifikasi status forwarding outbound callback (fase berikutnya) dari log monitor host.
 - Jika proxy aktif, verifikasi request host-scoped tetap mendapatkan `200/202` dari upstream.
 
 ## 7. Rollback cepat
@@ -97,8 +103,6 @@ Lalu cek status dengan `reference` dari response.
 ## 8. Login dashboard
 
 - Dashboard admin di `/ui` dilindungi session cookie.
-- Tetapkan password lewat env:
-  ```bash
-  export HOST_RUTEBAYAR_ADMIN_PASSWORD='ganti-password'
-  ```
+- Tetapkan password lewat env `HOST_RUTEBAYAR_ADMIN_PASSWORD`.
+- Default `admin123` aman untuk local dev saja; non-local/prod wajib password kuat.
 - Jika lupa password, atur ulang env lalu restart service.

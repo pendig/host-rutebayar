@@ -20,10 +20,10 @@
 }
 ```
 
-## Verifikasi callback per host
+## Verifikasi callback/internal event
 
 - `POST` ke host callback URL dari `callback_urls` **belum** diaktifkan oleh layanan ini.
-- Saat ini alur yang berjalan saat ini adalah:
+- Saat ini yang aktif adalah alur internal:
   - verifikasi signature dan verifikasi idempotency di `/webhooks/{provider}`,
   - update ledger/order internal,
   - serta audit record pada layanan.
@@ -33,13 +33,13 @@
 
 - `payments.create` counter dan error labels.
 - `payments.webhook` success/error + invalid signature ratio.
-- DLQ drain log saat retry/reconciliate gagal.
+- DLQ drain log saat retry/reconcile gagal.
 - Monitoring puncak latency: waktu dari `create` sampai webhook success.
 - Audit log: create-payment, webhook success, reconcile status, dan callback failure.
 - Dashboard callback delivery: `/ui/callbacks` menampilkan success/failure log dan tombol replay manual.
 
 ## Playbook alert
 
-- Jika webhook invalid signature naik >5% selama 5 menit, matikan forward callback sementara dan minta rotasi secret.
+- Jika webhook invalid signature naik >5% selama 5 menit, periksa signature validity dan lakukan rotasi secret bila perlu.
 - Jika DLQ tumbuh terus >100 item, cek kejanggalan endpoint callback host.
 - Jika jumlah `payments.create.error.product_inactive` tinggi, cek onboarding produk yang belum aktif.
