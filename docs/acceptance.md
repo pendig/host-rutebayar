@@ -26,7 +26,7 @@
 
 - [x] Self-hosted runbook tercatat lengkap (`docs/runbook.md`).
 - [x] Contoh alur callback + enkripsi/discrepancy check tercatat untuk onboarding host (`docs/callback-and-observability.md`).
-- [x] Semua endpoint/fitur penting terdokumentasi di `api/openapi.yaml`.
+- [x] Semua endpoint/fitur penting terdokumentasi di `internal/api/openapi.yaml`.
 - [x] Acceptance criteria per-fase terpusat di file ini.
 
 ## Ringkasan risiko operasional

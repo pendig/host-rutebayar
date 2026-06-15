@@ -2,7 +2,7 @@
 
 ## 1. Prasyarat
 
-- Go 1.25.11+ pada mesin operasi.
+- Go 1.21+ pada mesin operasi.
 - Direktori kerja yang dapat menulis file `host-rutebayar.db`.
 - Kunci kredensial `host_secret` dan `webhook_secret` siap per-host.
 - (Opsional) upstream rute-bayar bila pakai mode proxy host-scoped.
@@ -75,13 +75,25 @@ Lalu cek status dengan `reference` dari response.
 - Pantau dashboard operasional di `http://127.0.0.1:18123/ui`.
 - Pantau callback monitor/retry di `http://127.0.0.1:18123/ui/callbacks`.
 - Pantau `go test ./...` di setiap perubahan.
-- Backup DB secara berkala (contoh `cp host-rutebayar.db host-rutebayar.db.$(date +%F_%H%M%S)`).
-- Restart service saat merubah credential policy/akun host.
-- Verifikasi webhook callback callback endpoint aktif dari monitor uptime host.
+- Backup DB secara berkala:
+  - `sqlite3 host-rutebayar.db ".backup 'host-rutebayar.db.$(date +%F_%H%M%S)'"`
+  - atau `cp` hanya aman saat proses benar-benar tidak menulis.
+- Restart service saat mengubah credential policy/akun host.
+- Verifikasi webhook callback endpoint aktif dari monitor uptime host.
 - Jika proxy aktif, verifikasi request host-scoped tetap mendapatkan `200/202` dari upstream.
 
 ## 7. Rollback cepat
 
 - Hentikan proses service.
-- Kembalikan `HOST_RUTEBAYAR_DATABASE_DSN` ke file backup.
+- Pulihkan `host-rutebayar.db` dari backup ke lokasi file data (contoh `cp host-rutebayar.db.2026-06-15_123000 host-rutebayar.db`).
+- Tetapkan `HOST_RUTEBAYAR_DATABASE_DSN` tetap menunjuk ke `host-rutebayar.db`.
 - Restart service dan verifikasi `/health`.
+
+## 8. Login dashboard
+
+- Dashboard admin di `/ui` dilindungi session cookie.
+- Tetapkan password lewat env:
+  ```bash
+  export HOST_RUTEBAYAR_ADMIN_PASSWORD='ganti-password'
+  ```
+- Jika lupa password, atur ulang env lalu restart service.

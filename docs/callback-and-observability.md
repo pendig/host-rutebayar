@@ -22,9 +22,12 @@
 
 ## Verifikasi callback per host
 
-- `POST` ke host callback URL dari `callback_urls`.
-- Kirim header `X-Host-ID` dan signature timestamp bila host memakai middleware verifikasi.
-- Terapkan idempotency di endpoint host (simpan `reference` + provider status).
+- `POST` ke host callback URL dari `callback_urls` **belum** diaktifkan oleh layanan ini.
+- Saat ini alur yang berjalan saat ini adalah:
+  - verifikasi signature dan verifikasi idempotency di `/webhooks/{provider}`,
+  - update ledger/order internal,
+  - serta audit record pada layanan.
+- Untuk delivery ke host eksternal, fase berikutnya perlu menambahkan worker/outbound callback fanout.
 
 ## Checklist observability yang disiapkan
 

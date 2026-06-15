@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -355,6 +356,9 @@ func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(reference, provider
 		if err == nil {
 			return statusResp, attempts, nil
 		}
+		if !isRetryableWebhookError(err) {
+			return "", attempts, err
+		}
 		if attempt == s.retryPolicy.MaxAttempts {
 			return "", attempts, err
 		}
@@ -363,6 +367,23 @@ func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(reference, provider
 		time.Sleep(delay)
 	}
 	return statusResp, attempts, err
+}
+
+func isRetryableWebhookError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "provider mismatch") {
+		return false
+	}
+	if strings.Contains(msg, "invalid status transition") {
+		return false
+	}
+	if strings.Contains(msg, "unsupported status") {
+		return false
+	}
+	return true
 }
 
 // RegisterHost stores host profile in-memory or sqlite.

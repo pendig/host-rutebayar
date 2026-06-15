@@ -143,6 +143,7 @@ var (
 const (
 	uiSessionCookieName = "host-rutebayar-admin-session"
 	uiSessionTTL        = 12 * time.Hour
+	maxCallbackLogs     = 100
 )
 
 func hasAdminUISession(r *http.Request) bool {
@@ -174,6 +175,17 @@ func sanitizeUISessionNext(next string) string {
 
 func generateUISessionToken() (string, error) {
 	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func generateRandomToken(size int) (string, error) {
+	if size <= 0 {
+		size = 16
+	}
+	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
@@ -215,8 +227,11 @@ func clearAdminUISession(w http.ResponseWriter, r *http.Request) {
 
 func recordCallbackLog(entry uiCallbackDelivery) {
 	callbackLogMu.Lock()
+	defer callbackLogMu.Unlock()
 	callbackLogs = append(callbackLogs, entry)
-	callbackLogMu.Unlock()
+	if len(callbackLogs) > maxCallbackLogs {
+		callbackLogs = callbackLogs[len(callbackLogs)-maxCallbackLogs:]
+	}
 }
 
 func listCallbackLogs() []uiCallbackDelivery {
@@ -227,8 +242,8 @@ func listCallbackLogs() []uiCallbackDelivery {
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
-	if len(out) > 100 {
-		out = out[:100]
+	if len(out) > maxCallbackLogs {
+		out = out[:maxCallbackLogs]
 	}
 	return out
 }
@@ -483,14 +498,29 @@ func handleCreateTestPayment(w http.ResponseWriter, r *http.Request, orchestrato
 }
 
 func handleDemoSeed(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	hostSecret, err := generateRandomToken(20)
+	if err != nil {
+		http.Error(w, "unable to generate host secret", http.StatusInternalServerError)
+		return
+	}
+	webhookSecret, err := generateRandomToken(20)
+	if err != nil {
+		http.Error(w, "unable to generate webhook secret", http.StatusInternalServerError)
+		return
+	}
+	notificationKey, err := generateRandomToken(20)
+	if err != nil {
+		http.Error(w, "unable to generate notification key", http.StatusInternalServerError)
+		return
+	}
 	host := domain.Host{
 		ID:                "host-demo",
 		Name:              "Demo Host",
 		CallbackURLs:      []string{"https://example.com/callback"},
 		CallbackAllowlist: []string{"https://example.com"},
-		NotificationKey:   "demo-notification-key",
-		HostSecret:        "demo-host-secret",
-		WebhookSecret:     "demo-webhook-secret",
+		NotificationKey:   notificationKey,
+		HostSecret:        hostSecret,
+		WebhookSecret:     webhookSecret,
 	}
 	product := domain.Product{
 		ID:       "prod-demo-001",
@@ -575,7 +605,7 @@ func handleUILogin(w http.ResponseWriter, r *http.Request, adminPassword string)
 		return
 	}
 	if r.Method == http.MethodGet {
-		message := strings.TrimSpace(r.URL.Query().Get("error")) != ""
+		message := strings.TrimSpace(r.URL.Query().Get("error")) == "1"
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_ = tmpl.Execute(w, map[string]interface{}{
 			"Next":    sanitizeUISessionNext(r.URL.Query().Get("next")),
@@ -608,14 +638,39 @@ func handleUILogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReplayCallback(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	if !hasAdminUISession(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
 	var req replayCallbackRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 	if req.Reference == "" || req.Provider == "" || req.Status == "" || req.IdempotencyKey == "" {
 		http.Error(w, "reference, provider, status, and idempotency_key are required", http.StatusBadRequest)
 		return
+	}
+	signature := strings.TrimSpace(r.Header.Get("X-Webhook-Signature"))
+	if signature != "" {
+		if err := authorizeWebhookSignature(r, orchestrator, req.Reference, body); err != nil {
+			recordCallbackLog(uiCallbackDelivery{
+				At:             time.Now().UTC().Format(time.RFC3339),
+				Reference:      req.Reference,
+				Provider:       req.Provider,
+				Status:         req.Status,
+				Result:         "replay-failed",
+				IdempotencyKey: req.IdempotencyKey,
+				Error:          err.Error(),
+			})
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
 	}
 	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(req.Reference, req.Provider, req.Status, req.IdempotencyKey)
 	if err != nil {
@@ -657,7 +712,11 @@ func handleUIHost(w http.ResponseWriter, r *http.Request, orchestrator *orchestr
 	}
 	host, err := orchestrator.GetHost(hostID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		if isNotFoundErr(err) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	products, err := orchestrator.ListProducts()
@@ -747,14 +806,23 @@ func handleUIOrder(w http.ResponseWriter, r *http.Request, orchestrator *orchest
 	}
 	order, err := orchestrator.GetPayment(reference)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		if isNotFoundErr(err) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	ledger, err := orchestrator.GetLedger(reference)
 	hasLedger := true
 	if err != nil {
-		ledger = domain.PaymentOrderLedger{}
-		hasLedger = false
+		if isNotFoundErr(err) {
+			ledger = domain.PaymentOrderLedger{}
+			hasLedger = false
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	tmpl, err := template.New("uiOrder").Parse(uiOrderHTML)
 	if err != nil {
@@ -996,6 +1064,13 @@ func handleRegisterHostPolicy(w http.ResponseWriter, r *http.Request, orchestrat
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(registerResponse{ID: req.HostID, Message: "host policy registered"})
+}
+
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 func authorizeHostSecret(r *http.Request, orchestrator *orchestration.Orchestrator, hostID string) error {
@@ -1694,11 +1769,11 @@ const uiHostHTML = `<!doctype html>
 					<tr><th>Field</th><th>Value</th></tr>
 					<tr><td>ID</td><td>{{.Host.ID}}</td></tr>
 					<tr><td>Nama</td><td>{{.Host.Name}}</td></tr>
-					<tr><td>Notification Key</td><td><pre>{{.Host.NotificationKey}}</pre></td></tr>
+					<tr><td>Notification Key</td><td>{{if .Host.NotificationKey}}configured{{else}}-{{end}}</td></tr>
 					<tr><td>Callback URLs</td><td><pre>{{range .Host.CallbackURLs}}{{.}} {{end}}</pre></td></tr>
 					<tr><td>Callback Allowlist</td><td><pre>{{range .Host.CallbackAllowlist}}{{.}} {{end}}</pre></td></tr>
-					<tr><td>Host Secret</td><td>{{.Host.HostSecret}}</td></tr>
-					<tr><td>Webhook Secret</td><td>{{.Host.WebhookSecret}}</td></tr>
+					<tr><td>Host Secret</td><td>{{if .Host.HostSecret}}configured{{else}}-{{end}}</td></tr>
+					<tr><td>Webhook Secret</td><td>{{if .Host.WebhookSecret}}configured{{else}}-{{end}}</td></tr>
 				</table>
 			</div>
 			<div class="section">
