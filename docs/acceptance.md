@@ -1,27 +1,36 @@
-# Fase 0 Acceptance Criteria
+# Phase Acceptance Criteria
 
-- `Load()` membaca konfigurasi host, port, environment, timeout.
-- Bila env tidak tersedia, default tetap bekerja (`development`, `127.0.0.1:18123`, 10s).
-- Pengaturan yang invalid akan diabaikan dengan fallback default agar runtime tetap stabil.
-- Struktur paket siap untuk implementasi domain dan orchestrator pada fase berikutnya.
+## Phase 0 - Foundation
 
-# Fase 6 Acceptance Criteria
+- [x] `Load()` membaca konfigurasi host, port, environment, timeout.
+- [x] Bila env tidak tersedia, default tetap bekerja (`development`, `127.0.0.1:18123`, 10s).
+- [x] Pengaturan yang invalid fallback ke nilai default untuk runtime tetap stabil.
+- [x] Paket domain dan orchestrator sudah siap dilanjutkan.
 
-- `POST /register/host` menerima host baru dan dapat dibaca saat list/lookup.
-- `POST /register/product` menerima produk aktif/nonaktif, termasuk override policy fee.
-- `POST /register/provider-account` menerima mapping credential per env.
-- `POST /register/host-policy` menyimpan policy default host.
-- Data host/product/order tersimpan di sqlite (`HOST_RUTEBAYAR_DATABASE_DSN`) setelah migrasi.
-- Dashboard `/ui` menampilkan daftar host, produk, dan order secara minimal.
+## Phase 6 - Self-hosted Foundation
 
-# Fase 7 Acceptance Criteria
+- [x] `POST /register/host` menerima host baru dan terbaca saat lookup/list.
+- [x] `POST /register/product` menerima produk aktif/nonaktif + fee policy override.
+- [x] `POST /register/provider-account` menerima mapping credential per env.
+- [x] `POST /register/host-policy` menyimpan policy default host.
+- [x] Data host/product/order tersimpan ke SQLite lewat `HOST_RUTEBAYAR_DATABASE_DSN`.
+- [x] Dashboard `/ui` menampilkan daftar host, produk, dan order.
 
-- Jika `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` diisi, request ke `/host/{host_id}/payments` dan `/host/{host_id}/payments/{reference}` diproxy ke upstream `/api/v1/...`.
-- Request ke upstream menyertakan header `X-Host-ID`.
-- Path `/host/{host_id}/payments` mengikuti spec contract di `api/openapi.yaml`.
+## Phase 7 - Host-scoped Integration
 
-# Fase 8 Acceptance Criteria
+- [x] Jika `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` diset, `/host/{host_id}/payments` dan `/host/{host_id}/payments/{reference}` diproxy ke upstream.
+- [x] Proxy menyertakan header `X-Host-ID`.
+- [x] Jalur host-scoped mengikuti contract yang dipetakan di OpenAPI.
 
-- Semua endpoint dokumentasi contract diperbarui untuk memetakan fitur yang ada.
-- Milestone fase 6-8 tercatat dan bisa dipakai untuk review PR berikutnya.
-- Self-hosted operator bisa menjalankan service dengan default env + file db.
+## Phase 8 - Operasional dan Acceptance
+
+- [x] Self-hosted runbook tercatat lengkap (`docs/runbook.md`).
+- [x] Contoh alur callback + enkripsi/discrepancy check tercatat untuk onboarding host (`docs/callback-and-observability.md`).
+- [x] Semua endpoint/fitur penting terdokumentasi di `api/openapi.yaml`.
+- [x] Acceptance criteria per-fase terpusat di file ini.
+
+## Ringkasan risiko operasional
+
+- Callback endpoint harus dibatasi allowlist dan secret per host.
+- Webhook dan callback harus diberi idempotency key + signature.
+- Jalur observability (metric, audit, DLQ) perlu dipantau secara berkala saat trafik naik.
