@@ -13,7 +13,7 @@ func TestCreatePaymentSuccess(t *testing.T) {
 	host := domain.Host{ID: "h-1", Name: "Host 1", NotificationKey: "notif", HostSecret: "hs", WebhookSecret: "ws"}
 	registry.Hosts[host.ID] = host
 	repository.registry.HostPolicies[host.ID] = domain.FeePolicy{Type: domain.FeeTypePercent, Value: 2, Currency: "IDR", Rounding: domain.RoundingRuleNearest}
-	product := domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod 1", Price: 100000}
+	product := domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod 1", Price: 100000, IsActive: true}
 	repository.registry.Products[product.ID] = product
 	repository.registry.HostProviderAccts["h-1"] = []domain.HostProviderAccount{{HostID: "h-1", Provider: "xendit", Env: "sandbox", CredentialsHash: "secret"}}
 
@@ -63,7 +63,7 @@ func TestReconcileWebhookIdempotent(t *testing.T) {
 	repository := NewOrchestrator(registry)
 	repository.registry.Hosts["h-1"] = domain.Host{ID: "h-1", Name: "Host 1", NotificationKey: "notif", HostSecret: "hs", WebhookSecret: "ws"}
 	repository.registry.HostPolicies["h-1"] = domain.FeePolicy{Type: domain.FeeTypeFree, Value: 0, Currency: "IDR", Rounding: domain.RoundingRuleNearest}
-	repository.registry.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000}
+	repository.registry.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000, IsActive: true}
 	repository.registry.HostProviderAccts["h-1"] = []domain.HostProviderAccount{{HostID: "h-1", Provider: "midtrans", Env: "sandbox", CredentialsHash: "hash"}}
 
 	out, err := repository.CreatePayment(CreateInput{HostID: "h-1", ProductID: "p-1"})
@@ -84,7 +84,7 @@ func TestReferenceIsJSONSafe(t *testing.T) {
 	registry := NewRegistry()
 	repository := NewOrchestrator(registry)
 	repository.registry.Hosts["h-1"] = domain.Host{ID: "h-1", Name: "Host 1", NotificationKey: "notif", HostSecret: "hs", WebhookSecret: "ws"}
-	repository.registry.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000}
+	repository.registry.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000, IsActive: true}
 	repository.registry.HostPolicies["h-1"] = domain.FeePolicy{Type: domain.FeeTypePercent, Value: 10, Currency: "IDR"}
 	repository.registry.HostProviderAccts["h-1"] = []domain.HostProviderAccount{{HostID: "h-1", Provider: "xendit", Env: "sandbox", CredentialsHash: "hash"}}
 

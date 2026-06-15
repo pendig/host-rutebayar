@@ -18,7 +18,7 @@ func TestCreatePaymentHTTP(t *testing.T) {
 	reg := orchestration.NewRegistry()
 	reg.Hosts["h-1"] = domain.Host{ID: "h-1", Name: "Host", NotificationKey: "notif", HostSecret: "hs", WebhookSecret: "ws"}
 	reg.HostPolicies["h-1"] = domain.FeePolicy{Type: domain.FeeTypePercent, Value: 2, Currency: "IDR"}
-	reg.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000}
+	reg.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000, IsActive: true}
 	reg.HostProviderAccts["h-1"] = []domain.HostProviderAccount{{HostID: "h-1", Provider: "xendit", Env: "sandbox", CredentialsHash: "secret"}}
 
 	mux := SetupMux(orchestration.NewOrchestrator(reg))
@@ -50,7 +50,7 @@ func TestWebhookHTTP(t *testing.T) {
 	reg := orchestration.NewRegistry()
 	reg.Hosts["h-1"] = domain.Host{ID: "h-1", Name: "Host", NotificationKey: "notif", HostSecret: "hs", WebhookSecret: "ws"}
 	reg.HostPolicies["h-1"] = domain.FeePolicy{Type: domain.FeeTypePercent, Value: 2, Currency: "IDR"}
-	reg.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000}
+	reg.Products["p-1"] = domain.Product{ID: "p-1", HostID: "h-1", Name: "Prod", Price: 10000, IsActive: true}
 	reg.HostProviderAccts["h-1"] = []domain.HostProviderAccount{{HostID: "h-1", Provider: "midtrans", Env: "sandbox", CredentialsHash: "secret"}}
 	orchestrator := orchestration.NewOrchestrator(reg)
 	mux := SetupMux(orchestrator)
