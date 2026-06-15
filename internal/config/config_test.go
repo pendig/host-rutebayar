@@ -8,7 +8,7 @@ import (
 func TestLoadDefault(t *testing.T) {
 	t.Setenv("HOST_RUTEBAYAR_ENV", "development")
 	t.Setenv("HOST_RUTEBAYAR_HOST", "127.0.0.1")
-	t.Setenv("HOST_RUTEBAYAR_PORT", "8080")
+	t.Setenv("HOST_RUTEBAYAR_PORT", "18123")
 	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "10s")
 	t.Setenv("HOST_RUTEBAYAR_DATABASE_DSN", "file:host-rutebayar.db?_pragma=foreign_keys(ON)")
 
@@ -16,10 +16,10 @@ func TestLoadDefault(t *testing.T) {
 	if cfg.Env != "development" {
 		t.Fatalf("expected default Env=development, got %q", cfg.Env)
 	}
-	if cfg.Port != 8080 {
-		t.Fatalf("expected default Port=8080, got %d", cfg.Port)
+	if cfg.Port != 18123 {
+		t.Fatalf("expected default Port=18123, got %d", cfg.Port)
 	}
-	if cfg.ListenAddress() != "127.0.0.1:8080" {
+	if cfg.ListenAddress() != "127.0.0.1:18123" {
 		t.Fatalf("unexpected listen address: %s", cfg.ListenAddress())
 	}
 	if cfg.Timeout != 10*time.Second {
@@ -51,8 +51,8 @@ func TestLoadInvalidConfigUsesDefault(t *testing.T) {
 	t.Setenv("HOST_RUTEBAYAR_TIMEOUT", "-1s")
 
 	cfg := Load()
-	if cfg.Port != 8080 {
-		t.Fatalf("expected fallback port 8080, got %d", cfg.Port)
+	if cfg.Port != 18123 {
+		t.Fatalf("expected fallback port 18123, got %d", cfg.Port)
 	}
 	if cfg.Timeout != 10*time.Second {
 		t.Fatalf("expected fallback timeout 10s, got %s", cfg.Timeout)

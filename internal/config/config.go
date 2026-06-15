@@ -23,7 +23,7 @@ func Load() Config {
 	return Config{
 		Env:     getEnv("HOST_RUTEBAYAR_ENV", "development"),
 		Host:    getEnv("HOST_RUTEBAYAR_HOST", "127.0.0.1"),
-		Port:    getEnvInt("HOST_RUTEBAYAR_PORT", 8080),
+		Port:    getEnvInt("HOST_RUTEBAYAR_PORT", 18123),
 		Timeout: getEnvDuration("HOST_RUTEBAYAR_TIMEOUT", 10*time.Second),
 		DBDSN:   getEnv("HOST_RUTEBAYAR_DATABASE_DSN", "file:host-rutebayar.db?_pragma=foreign_keys(ON)"),
 		UpstreamURL: getEnv("HOST_RUTEBAYAR_UPSTREAM_BASE_URL", ""),
