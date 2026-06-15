@@ -79,6 +79,15 @@ Repo ini ditujukan untuk membuat model seperti ini:
 - `sandbox`: dipakai untuk testing host + integration.
 - `production`: environment sesungguhnya, terpisah key/credential dan base URL.
 
+## Konfigurasi runtime
+
+- `HOST_RUTEBAYAR_ENV` (default `development`)
+- `HOST_RUTEBAYAR_HOST` (default `127.0.0.1`)
+- `HOST_RUTEBAYAR_PORT` (default `8080`)
+- `HOST_RUTEBAYAR_TIMEOUT` (default `10s`)
+- `HOST_RUTEBAYAR_DATABASE_DSN` (default `file:host-rutebayar.db?_pragma=foreign_keys(ON)`)
+- `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` (opsional) — saat diisi, path `/host/{id}/payments...` akan diproksi ke upstream rute-bayar (`/api/v1/...`).
+
 ## Security checklist awal
 
 - `host_secret` dan `webhook_secret` wajib unik per-host.
