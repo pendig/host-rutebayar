@@ -30,14 +30,26 @@ Repo ini ditujukan untuk membuat model seperti ini:
 
 ## Fee policy snapshot & settlement
 
-- Saat payment dibuat, host-rutebayar mengambil snapshot `fee_policy` + `fee_version`.
-- Snapshot disimpan di `PaymentOrder` agar fee tidak berubah saat transaksi berlangsung.
-- Hasil kalkulasi (gross/fee/net) tetap immutable di `PaymentOrder` untuk kebutuhan audit.
+- Saat payment dibuat, host-rutebayar mengambil snapshot `FeePolicySnapshot` (mis. `policy_snapshot_id`, `policy_version`, `policy_payload_hash`).
+- Snapshot disimpan di `PaymentOrder` agar policy fee tidak berubah saat transaksi berlangsung.
+- Hasil kalkulasi (gross/host fee/provider fee/net) tetap immutable di `PaymentOrder` untuk kebutuhan audit.
 - Data settlement diekspor sebagai ledger line:
   - `gross_amount`
   - `provider_fee_amount`
   - `host_fee_amount`
   - `net_amount`
+
+## Reuse OpenAPI rute-bayar untuk MVP cepat
+
+- Repo `rute-bayar` sudah punya kontrak API yang bisa langsung dipakai:
+  - `internal/api/openapi.yaml`
+  - `docs/api-spec.md` (ringkasan endpoint)
+- Untuk MVP, host-bayar bisa menjadi layer orchestrator, bukan builder adapter provider:
+  - maintain policy+tenant di `host-rutebayar`,
+  - forward request invoice/payment ke endpoint daemon rute-bayar (`POST /api/v1/payments`, `GET /api/v1/payments/{reference}`, `GET /api/v1/payments/{reference}/status`),
+  - biarkan daemon rute-bayar menerima/verifikasi webhook dan `Forwarding` event,
+  - host-bayar menambahkan enrich (policy/fee) lalu push callback terenkripsi ke website host.
+- Pendekatan ini cocok untuk MVP karena rute-bayar sudah punya endpoint dasar + proof create->webhook->reconcile.
 
 ## Scope awal (v0)
 

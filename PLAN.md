@@ -11,21 +11,21 @@
 ## Phase 1 - Core Domain
 
 - [ ] `Host`:
-  - id, name, callback_url, callback_allowlist, notification_key, host_secret, webhook_secret.
+  - id, name, callback_urls, callback_allowlist, notification_key, host_secret, webhook_secret.
 - [ ] `FeePolicy`:
   - scope: host default (`host_id`) + optional product override.
   - fields: type (`percent|fixed|free`), value, currency, rounding_rule, min_fee, max_fee, effective_from/until, policy_version.
 - [ ] `FeePolicySnapshot`:
-  - policy_id, policy_payload_hash, policy_version, applied_at.
+  - policy_id, policy_payload_hash, policy_version, effective_from, effective_until.
 - [ ] `Product`:
   - id, host_id, name, sku, price, is_active, metadata.
   - support `fee_policy_override` (opsional) untuk override default host.
 - [ ] `HostProviderAccount`:
   - per-host credentials map (xendit/midtrans/doku/ipaymu), env sandbox/prod.
 - [ ] `PaymentOrder`:
-  - host_id, product_id, provider, env, reference, status, amount, fee_amount, provider_fee_amount, net_amount, buyer_ref, policy_snapshot_id.
+  - host_id, product_id, provider, currency, env, reference, status, gross_amount, host_fee_amount, provider_fee_amount, net_amount, buyer_ref, policy_snapshot_id.
 - [ ] `PaymentOrderLedger`:
-  - payment_order_id, gross_amount, fee_amount, provider_fee_amount, net_amount, policy_checksum, idempotency_key.
+  - payment_order_id, gross_amount, host_fee_amount, provider_fee_amount, net_amount, policy_checksum, idempotency_key.
 - [ ] `WebhookRoute`:
   - event mapping + retry policy ke host endpoint.
 
@@ -35,7 +35,7 @@
 - [ ] Kalkulasi fee saat pembuatan order:
   - Terapkan fee berdasarkan `Product` override jika ada, fallback `Host` default.
   - Validasi nilai fee (`percent` 0-100, `fixed` >= 0, `free` = 0, cap/min valid).
-  - Simpan snapshot policy + hasil `fee_amount` + `net_amount` + `provider_fee_amount` ke `PaymentOrder`.
+  - Simpan snapshot policy + hasil `host_fee_amount` + `provider_fee_amount` + `net_amount` ke `PaymentOrder`.
 - [ ] Endpoint `POST /payments` membuat internal order + pilih provider.
 - [ ] Endpoint `GET /payments/{ref}` untuk status.
 - [ ] Endpoint callback untuk webhook provider:
@@ -74,4 +74,9 @@
   - `host-rutebayar` = orchestrator & registry.
   - `rute-bayar` = adapter/payment-router/utility.
 - [ ] Implement SDK client library (minimal API wrapper).
+- [ ] `Phase 0..4` diperkaya oleh OpenAPI proxy dari `rute-bayar`:
+  - gunakan `internal/api/openapi.yaml` sebagai contract primer.
+  - endpoint host-facing minimal: `/host/{id}/payments` -> `rute-bayar /api/v1/payments`.
+  - endpoint status/check: `/host/{id}/payments/{reference}` -> `rute-bayar /api/v1/payments/{reference}`.
+  - endpoint callback fanout: `rute-bayar webhook` event replay + host-specific enrichment.
 - [ ] Canary + sandbox test + dokumentasi onboarding host.
