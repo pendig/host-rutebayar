@@ -114,11 +114,58 @@ Catatan keamanan: jangan pernah hardcode password ini ke source/docs publik.
 - `rute-bayar` tetap memegang adapter provider (Xendit/Midtrans/Doku/IPaymu).
 - Callback host outbound dan pengiriman ke URL host belum aktif pada fase ini.
 
-## Rencana kerja
+## Struktur Direktori
 
-Lihat `PLAN.md`.
+Berikut adalah struktur utama dari codebase project ini:
 
-## Status
+* `cmd/host-rutebayar/`: Entry point utama aplikasi.
+* `api/openapi.yaml`: Kontrak spesifikasi API OpenAPI.
+* `docs/`: Dokumentasi teknis, runbook operasional, dan kriteria penerimaan.
+* `internal/`: Logika internal aplikasi (tidak dapat di-import oleh package luar).
+  * `api/`: REST API Controllers/Handlers (registrasi host, produk, provider, dll.).
+  * `config/`: Parser dan validator konfigurasi runtime.
+  * `domain/`: Model data/entitas inti (`Host`, `Product`, `PaymentOrder`, dll.).
+  * `gateway/`: Abstraksi provider gateway.
+  * `http/`: Router HTTP, middleware, UI dashboard admin, dan static assets.
+  * `observability/`: Logging, metrik audit trail, dan alert thresholds.
+  * `orchestration/`: Kalkulasi fee, intent matching, settlement, dan ledger.
+  * `proxy/`: Proxy layer untuk mem-forward request host-scoped ke upstream `rute-bayar`.
+  * `security/`: Verifikasi signature webhook, kriptografi kunci, dan otentikasi dashboard.
+  * `storage/`: Database access layer SQLite dan migrasi schema.
 
-- Fase 6-8 sudah diimplementasi: registrasi host/product/provider, payment flow, webhook reconcile, dashboard, dan runbook.
+## Memulai Pengembangan (Getting Started)
+
+### Prasyarat
+- Go 1.23+
+- SQLite3 (driver database tertanam otomatis)
+
+### Menjalankan Unit Test
+Semua kontribusi kode wajib lolos pengujian unit test. Jalankan test suite dengan perintah berikut:
+```bash
+go test -v ./...
+```
+
+### Menjalankan Aplikasi Secara Lokal
+1. Build binary aplikasi:
+   ```bash
+   go build -o host-rutebayar ./cmd/host-rutebayar
+   ```
+2. Jalankan binary dengan konfigurasi default:
+   ```bash
+   ./host-rutebayar
+   ```
+3. Akses dashboard di browser pada `http://127.0.0.1:18123/ui` (password login default: `admin123`).
+
+Untuk petunjuk operasional dan skrip seeding lengkap, silakan merujuk ke [Self-hosted Runbook](docs/runbook.md).
+
+## Rencana Kerja & Status
+
+- Detail peta jalan proyek dapat dilihat di [PLAN.md](PLAN.md).
+- Status saat ini: Fase 6-8 telah selesai diimplementasikan (registrasi host/product/provider, payment flow, webhook reconcile, dashboard, dan runbook).
 - Operasional lanjutan difokuskan ke hardening dan callback fanout host outbound.
+
+## Kontribusi & Lisensi
+
+- Kontribusi baru sangat kami hargai. Silakan baca [CONTRIBUTING.md](CONTRIBUTING.md) sebelum mengirimkan Pull Request.
+- Project ini dilisensikan di bawah [MIT License](LICENSE).
+
