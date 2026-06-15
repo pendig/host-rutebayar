@@ -341,21 +341,28 @@ func webhookIdempotencyKey(reference, provider, idempotencyKey string) string {
 
 // ReconcileWebhookWithRetry applies retry policy to webhook reconciliation simulation.
 func (s *Orchestrator) ReconcileWebhookWithRetry(reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, error) {
+	statusResp, _, err := s.ReconcileWebhookWithRetryWithAttempts(reference, provider, status, idempotencyKey)
+	return statusResp, err
+}
+
+func (s *Orchestrator) ReconcileWebhookWithRetryWithAttempts(reference, provider, status, idempotencyKey string) (domain.PaymentOrderStatus, int, error) {
 	var statusResp domain.PaymentOrderStatus
 	var err error
+	attempts := 0
 	for attempt := 1; attempt <= s.retryPolicy.MaxAttempts; attempt++ {
+		attempts = attempt
 		statusResp, err = s.ReconcileWebhook(reference, provider, status, idempotencyKey)
 		if err == nil {
-			return statusResp, nil
+			return statusResp, attempts, nil
 		}
 		if attempt == s.retryPolicy.MaxAttempts {
-			return "", err
+			return "", attempts, err
 		}
 		s.metrics.Inc("payments.webhook.retry")
 		delay := s.retryPolicy.DelayForAttempt(attempt)
 		time.Sleep(delay)
 	}
-	return statusResp, err
+	return statusResp, attempts, err
 }
 
 // RegisterHost stores host profile in-memory or sqlite.
@@ -447,6 +454,15 @@ func (s *Orchestrator) ListProducts() ([]domain.Product, error) {
 		products = append(products, product)
 	}
 	return products, nil
+}
+
+func (s *Orchestrator) ListProviderAccounts(hostID string) ([]domain.HostProviderAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		return s.store.GetProviderAccounts(hostID)
+	}
+	return append([]domain.HostProviderAccount{}, s.registry.HostProviderAccts[hostID]...), nil
 }
 
 func (s *Orchestrator) ListOrders() ([]domain.PaymentOrder, error) {

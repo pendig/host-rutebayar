@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pendig/host-rutebayar/internal/domain"
@@ -97,6 +98,63 @@ type registerResponse struct {
 	Message string `json:"message"`
 }
 
+type testPaymentRequest struct {
+	HostID    string `json:"host_id"`
+	ProductID string `json:"product_id"`
+	BuyerRef  string `json:"buyer_ref"`
+	Env       string `json:"env"`
+}
+
+type seedDataResponse struct {
+	HostID    string `json:"host_id"`
+	ProductID string `json:"product_id"`
+	Reference string `json:"reference,omitempty"`
+	Message   string `json:"message"`
+}
+
+type replayCallbackRequest struct {
+	Reference      string `json:"reference"`
+	Provider       string `json:"provider"`
+	Status         string `json:"status"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type uiCallbackDelivery struct {
+	At             string `json:"at"`
+	Reference      string `json:"reference"`
+	Provider       string `json:"provider"`
+	Status         string `json:"status"`
+	Result         string `json:"result"`
+	IdempotencyKey string `json:"idempotency_key"`
+	Attempts       int    `json:"attempts"`
+	Error          string `json:"error"`
+}
+
+var (
+	callbackLogMu sync.Mutex
+	callbackLogs  = []uiCallbackDelivery{}
+)
+
+func recordCallbackLog(entry uiCallbackDelivery) {
+	callbackLogMu.Lock()
+	callbackLogs = append(callbackLogs, entry)
+	callbackLogMu.Unlock()
+}
+
+func listCallbackLogs() []uiCallbackDelivery {
+	callbackLogMu.Lock()
+	defer callbackLogMu.Unlock()
+	out := make([]uiCallbackDelivery, 0, len(callbackLogs))
+	out = append(out, callbackLogs...)
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	if len(out) > 100 {
+		out = out[:100]
+	}
+	return out
+}
+
 func SetupMux(orchestrator *orchestration.Orchestrator) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -128,12 +186,40 @@ func SetupMux(orchestrator *orchestration.Orchestrator) *http.ServeMux {
 		}
 		handleUIOrder(w, r, orchestrator)
 	})
+	mux.HandleFunc("/ui/callbacks", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleUICallbacks(w, r)
+	})
+	mux.HandleFunc("/ui/callbacks/replay", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleReplayCallback(w, r, orchestrator)
+	})
 	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleUI(w, r, orchestrator)
+	})
+	mux.HandleFunc("/admin/demo-seed", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleDemoSeed(w, r, orchestrator)
+	})
+	mux.HandleFunc("/admin/test-payment", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleCreateTestPayment(w, r, orchestrator)
 	})
 	mux.HandleFunc("/register/host", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -249,6 +335,159 @@ func handleGetPayment(w http.ResponseWriter, r *http.Request, orchestrator *orch
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+func handleCreateTestPayment(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	var req testPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.HostID == "" || req.ProductID == "" {
+		http.Error(w, "host_id and product_id are required", http.StatusBadRequest)
+		return
+	}
+	out, err := orchestrator.CreatePayment(orchestration.CreateInput{
+		HostID:    req.HostID,
+		ProductID: req.ProductID,
+		BuyerRef:  req.BuyerRef,
+		Env:       req.Env,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	response := createPaymentResponse{
+		Reference:   out.Reference,
+		Status:      string(out.Order.Status),
+		CheckoutURL: out.Order.ProviderCheckoutURL,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func handleDemoSeed(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	host := domain.Host{
+		ID:                "host-demo",
+		Name:              "Demo Host",
+		CallbackURLs:      []string{"https://example.com/callback"},
+		CallbackAllowlist: []string{"https://example.com"},
+		NotificationKey:   "demo-notification-key",
+		HostSecret:        "demo-host-secret",
+		WebhookSecret:     "demo-webhook-secret",
+	}
+	product := domain.Product{
+		ID:       "prod-demo-001",
+		HostID:   host.ID,
+		Name:     "Paket Demo",
+		SKU:      "PKT-001",
+		Price:    120000,
+		IsActive: true,
+	}
+	account := domain.HostProviderAccount{
+		HostID:          host.ID,
+		Provider:        "midtrans",
+		Env:             "sandbox",
+		CredentialsHash: "sha256:demo-credentials-hash",
+		PublicConfig: map[string]string{
+			"merchant_id": "m-demo",
+		},
+	}
+	if err := orchestrator.RegisterHost(host); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := orchestrator.RegisterProduct(product); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := orchestrator.RegisterProviderAccount(account); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := orchestrator.RegisterHostPolicy(host.ID, domain.FeePolicy{
+		Type:          domain.FeeTypePercent,
+		Value:         2,
+		Currency:      "IDR",
+		Rounding:      domain.RoundingRuleNearest,
+		PolicyVersion: "v1",
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	payment, err := orchestrator.CreatePayment(orchestration.CreateInput{
+		HostID:    host.ID,
+		ProductID: product.ID,
+		Env:       "sandbox",
+		BuyerRef:  "seed-order",
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res := seedDataResponse{
+		HostID:    host.ID,
+		ProductID: product.ID,
+		Reference: payment.Reference,
+		Message:   "seed demo siap. Host, product, provider account, policy, dan contoh order sudah dibuat.",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func handleUICallbacks(w http.ResponseWriter, r *http.Request) {
+	logs := listCallbackLogs()
+	tmpl, err := template.New("uiCallbacks").Parse(uiCallbacksHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = tmpl.Execute(w, map[string]interface{}{
+		"Deliveries": logs,
+	})
+}
+
+func handleReplayCallback(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
+	var req replayCallbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.Reference == "" || req.Provider == "" || req.Status == "" || req.IdempotencyKey == "" {
+		http.Error(w, "reference, provider, status, and idempotency_key are required", http.StatusBadRequest)
+		return
+	}
+	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(req.Reference, req.Provider, req.Status, req.IdempotencyKey)
+	if err != nil {
+		recordCallbackLog(uiCallbackDelivery{
+			At:             time.Now().UTC().Format(time.RFC3339),
+			Reference:      req.Reference,
+			Provider:       req.Provider,
+			Status:         req.Status,
+			Result:         "replay-failed",
+			IdempotencyKey: req.IdempotencyKey,
+			Attempts:       attempts,
+			Error:          err.Error(),
+		})
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	recordCallbackLog(uiCallbackDelivery{
+		At:             time.Now().UTC().Format(time.RFC3339),
+		Reference:      req.Reference,
+		Provider:       req.Provider,
+		Status:         string(status),
+		Result:         "replay-success",
+		IdempotencyKey: req.IdempotencyKey,
+		Attempts:       attempts,
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"reference": req.Reference,
+		"status":    string(status),
+		"result":    "replayed",
+	})
+}
+
 func handleUIHost(w http.ResponseWriter, r *http.Request, orchestrator *orchestration.Orchestrator) {
 	hostID := strings.TrimPrefix(r.URL.Path, "/ui/host/")
 	if hostID == "" {
@@ -266,6 +505,11 @@ func handleUIHost(w http.ResponseWriter, r *http.Request, orchestrator *orchestr
 		return
 	}
 	orders, err := orchestrator.ListOrders()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	accounts, err := orchestrator.ListProviderAccounts(hostID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -295,6 +539,7 @@ func handleUIHost(w http.ResponseWriter, r *http.Request, orchestrator *orchestr
 		"Host":     host,
 		"Products": hostProducts,
 		"Orders":   hostOrders,
+		"Accounts": accounts,
 	})
 }
 
@@ -371,27 +616,76 @@ func handleWebhook(w http.ResponseWriter, r *http.Request, orchestrator *orchest
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		recordCallbackLog(uiCallbackDelivery{
+			At:       time.Now().UTC().Format(time.RFC3339),
+			Result:   "read-body-failed",
+			Error:    "invalid body",
+			Provider: provider,
+		})
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 	var payload webhookPayload
 	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&payload); err != nil {
+		recordCallbackLog(uiCallbackDelivery{
+			At:       time.Now().UTC().Format(time.RFC3339),
+			Result:   "invalid-json",
+			Error:    "invalid body",
+			Provider: provider,
+		})
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 	if payload.Reference == "" || payload.Status == "" || payload.IdempotencyKey == "" {
+		recordCallbackLog(uiCallbackDelivery{
+			At:             time.Now().UTC().Format(time.RFC3339),
+			Reference:      payload.Reference,
+			Provider:       provider,
+			Status:         payload.Status,
+			Result:         "invalid-payload",
+			IdempotencyKey: payload.IdempotencyKey,
+			Error:          "reference, status, and idempotency_key are required",
+		})
 		http.Error(w, "reference, status, and idempotency_key are required", http.StatusBadRequest)
 		return
 	}
 	if err := authorizeWebhookSignature(r, orchestrator, payload.Reference, body); err != nil {
+		recordCallbackLog(uiCallbackDelivery{
+			At:             time.Now().UTC().Format(time.RFC3339),
+			Reference:      payload.Reference,
+			Provider:       provider,
+			Status:         payload.Status,
+			Result:         "failed",
+			IdempotencyKey: payload.IdempotencyKey,
+			Error:          err.Error(),
+		})
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-	status, err := orchestrator.ReconcileWebhook(payload.Reference, provider, payload.Status, payload.IdempotencyKey)
+	status, attempts, err := orchestrator.ReconcileWebhookWithRetryWithAttempts(payload.Reference, provider, payload.Status, payload.IdempotencyKey)
 	if err != nil {
+		recordCallbackLog(uiCallbackDelivery{
+			At:             time.Now().UTC().Format(time.RFC3339),
+			Reference:      payload.Reference,
+			Provider:       provider,
+			Status:         payload.Status,
+			Result:         "failed",
+			IdempotencyKey: payload.IdempotencyKey,
+			Attempts:       attempts,
+			Error:          err.Error(),
+		})
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	recordCallbackLog(uiCallbackDelivery{
+		At:             time.Now().UTC().Format(time.RFC3339),
+		Reference:      payload.Reference,
+		Provider:       provider,
+		Status:         string(status),
+		Result:         "success",
+		IdempotencyKey: payload.IdempotencyKey,
+		Attempts:       attempts,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": string(status)})
@@ -611,76 +905,443 @@ const dashboardHTML = `<!doctype html>
 <html>
 <head>
 	<meta charset="utf-8"/>
-	<title>host-rutebayar dashboard</title>
+	<title>host-rutebayar self-hosted</title>
 	<style>
-		body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 20px; background: linear-gradient(120deg, #f3f7ff, #eef8f7); color: #15314b; }
-		table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
-		td, th { border: 1px solid #c4d0dc; padding: 8px; text-align: left; }
-		th { background: #1f3c5d; color: #fff; position: sticky; top: 0; }
-		h1 { margin-top: 0; }
-		pre { background: #f8fcff; padding: 8px; border: 1px solid #d6e4f0; }
-		.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 24px; box-shadow: 0 8px 24px rgba(2, 53, 110, 0.08); }
+		body { font-family: Arial, sans-serif; margin: 0; padding: 16px; color: #11293f; background: radial-gradient(circle at 12% 0%, #f6fbff 0, #f0f6ff 36%, #f5f7ff 100%); }
+		a { color: #114b8a; }
+		main { max-width: 1200px; margin: 0 auto; }
+		h1, h2, h3 { margin-top: 0; }
+		.section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; box-shadow: 0 10px 26px rgba(28, 46, 74, 0.08); }
+		table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+		th, td { border: 1px solid #cfdee6; padding: 8px; text-align: left; vertical-align: top; }
+		th { background: #16385f; color: #fff; }
+		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+		input, textarea, select, button { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; border-radius: 8px; border: 1px solid #bfd0dd; }
+		textarea { min-height: 72px; font-family: monospace; }
+		button { background: #204b83; color: #fff; font-weight: 700; cursor: pointer; border: 0; }
+		button:hover { background: #14335a; }
+		.small-btn { width: auto; min-width: 86px; padding: 6px 10px; }
+		.msg { margin-top: 10px; padding: 8px 10px; border-radius: 8px; display: none; }
+		.msg.ok { background: #eaffea; border: 1px solid #87d28f; color: #1f5a1f; }
+		.msg.err { background: #ffe9e9; border: 1px solid #ef9494; color: #7c1b1b; }
+		.top-actions { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+		.subtle { color: #6f7f95; font-size: 14px; }
 	</style>
+	<script>
+		function splitCSV(value) {
+			return value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+		}
+		function showMessage(message, isOk) {
+			const el = document.getElementById("action-result");
+			el.textContent = message;
+			el.className = "msg " + (isOk ? "ok" : "err");
+			el.style.display = "block";
+		}
+		async function postJSON(url, body, headers = {}) {
+			const response = await fetch(url, {
+				method: "POST",
+				headers: Object.assign({ "Content-Type": "application/json" }, headers),
+				body: JSON.stringify(body),
+			});
+			const text = await response.text();
+			let payload;
+			try {
+				payload = JSON.parse(text);
+			} catch (e) {
+				payload = text;
+			}
+			if (!response.ok) {
+				throw new Error(typeof payload === "string" ? payload : (payload.message || payload.error || JSON.stringify(payload)));
+			}
+			return payload;
+		}
+		function syncProductOptions() {
+			const hostID = document.getElementById("test-host-id").value;
+			const productSelect = document.getElementById("test-product-id");
+			let firstAvailable = "";
+			for (const option of productSelect.options) {
+				const matchHost = !option.dataset.host || option.dataset.host === hostID;
+				option.hidden = !matchHost;
+				if (matchHost && firstAvailable === "" && option.value) {
+					firstAvailable = option.value;
+				}
+			}
+			if (firstAvailable && !productSelect.value) {
+				productSelect.value = firstAvailable;
+			}
+			if (firstAvailable && productSelect.value && productSelect.selectedOptions[0]?.hidden) {
+				productSelect.value = firstAvailable;
+			}
+		}
+		async function submitHost(event) {
+			event.preventDefault();
+			try {
+				const payload = {
+					id: document.getElementById("host-id").value.trim(),
+					name: document.getElementById("host-name").value.trim(),
+					notification_key: document.getElementById("host-notification-key").value.trim(),
+					host_secret: document.getElementById("host-secret").value.trim(),
+					webhook_secret: document.getElementById("host-webhook-secret").value.trim(),
+					callback_urls: splitCSV(document.getElementById("host-callback-urls").value),
+					callback_allowlist: splitCSV(document.getElementById("host-callback-allowlist").value),
+				};
+				await postJSON("/register/host", payload);
+				showMessage("Host berhasil disimpan. Halaman dimuat ulang.", true);
+				setTimeout(() => location.reload(), 600);
+			} catch (err) {
+				showMessage("Gagal simpan host: " + err.message, false);
+			}
+		}
+		async function submitProduct(event) {
+			event.preventDefault();
+			try {
+				const hostID = document.getElementById("product-host-id").value;
+				const payload = {
+					id: document.getElementById("product-id").value.trim(),
+					host_id: hostID,
+					name: document.getElementById("product-name").value.trim(),
+					sku: document.getElementById("product-sku").value.trim(),
+					price: Number(document.getElementById("product-price").value),
+					is_active: document.getElementById("product-active").checked,
+				};
+				const metaRaw = document.getElementById("product-meta").value.trim();
+				const overrideRaw = document.getElementById("product-fee-override").value.trim();
+				if (metaRaw) {
+					payload.meta = JSON.parse(metaRaw);
+				} else {
+					payload.meta = {};
+				}
+				if (overrideRaw) {
+					payload.fee_policy_override = JSON.parse(overrideRaw);
+				}
+				await postJSON("/register/product", payload, {
+					"X-Host-Secret": document.getElementById("product-host-secret").value,
+				});
+				showMessage("Produk berhasil disimpan. Halaman dimuat ulang.", true);
+				setTimeout(() => location.reload(), 600);
+			} catch (err) {
+				showMessage("Gagal simpan produk: " + err.message, false);
+			}
+		}
+		async function submitProviderAccount(event) {
+			event.preventDefault();
+			try {
+				const payload = {
+					host_id: document.getElementById("provider-host-id").value,
+					provider: document.getElementById("provider-name").value.trim(),
+					env: document.getElementById("provider-env").value.trim() || "sandbox",
+					credentials_hash: document.getElementById("provider-credentials").value.trim(),
+					public_config: {},
+				};
+				const publicConfig = document.getElementById("provider-config").value.trim();
+				if (publicConfig) {
+					payload.public_config = JSON.parse(publicConfig);
+				}
+				await postJSON("/register/provider-account", payload, {
+					"X-Host-Secret": document.getElementById("provider-host-secret").value,
+				});
+				showMessage("Provider account berhasil disimpan. Halaman dimuat ulang.", true);
+				setTimeout(() => location.reload(), 600);
+			} catch (err) {
+				showMessage("Gagal simpan provider account: " + err.message, false);
+			}
+		}
+		async function submitHostPolicy(event) {
+			event.preventDefault();
+			try {
+				const payload = {
+					host_id: document.getElementById("policy-host-id").value,
+					fee_policy: {
+						type: document.getElementById("policy-type").value.trim() || "percent",
+						value: Number(document.getElementById("policy-value").value),
+						currency: document.getElementById("policy-currency").value.trim() || "IDR",
+						rounding: document.getElementById("policy-rounding").value.trim() || "nearest",
+						policy_version: document.getElementById("policy-version").value.trim() || "v1",
+					},
+				};
+				const minFeeRaw = document.getElementById("policy-min-fee").value.trim();
+				const maxFeeRaw = document.getElementById("policy-max-fee").value.trim();
+				if (minFeeRaw) payload.fee_policy.min_fee = Number(minFeeRaw);
+				if (maxFeeRaw) payload.fee_policy.max_fee = Number(maxFeeRaw);
+				await postJSON("/register/host-policy", payload, {
+					"X-Host-Secret": document.getElementById("policy-host-secret").value,
+				});
+				showMessage("Host policy berhasil disimpan.", true);
+				setTimeout(() => location.reload(), 600);
+			} catch (err) {
+				showMessage("Gagal simpan host policy: " + err.message, false);
+			}
+		}
+		async function seedDemo(event) {
+			event.preventDefault();
+			try {
+				const response = await postJSON("/admin/demo-seed", {});
+				document.getElementById("seed-output").textContent = JSON.stringify(response, null, 2);
+				showMessage("Data demo berhasil dibuat. Halaman dimuat ulang.", true);
+				setTimeout(() => location.reload(), 600);
+			} catch (err) {
+				showMessage("Seed gagal: " + err.message, false);
+			}
+		}
+		async function createTestPayment(event) {
+			event.preventDefault();
+			try {
+				const hostID = document.getElementById("test-host-id").value;
+				const payload = {
+					host_id: hostID,
+					product_id: document.getElementById("test-product-id").value,
+					buyer_ref: document.getElementById("test-buyer-ref").value.trim(),
+					env: document.getElementById("test-env").value.trim() || "sandbox",
+				};
+				const response = await postJSON("/admin/test-payment", payload);
+					const message = "Reference: " + response.reference + "\\nCheckout: " + response.checkout_url;
+				document.getElementById("test-output").textContent = message;
+				showMessage("Test payment berhasil dibuat.", true);
+			} catch (err) {
+				showMessage("Test payment gagal: " + err.message, false);
+			}
+		}
+		window.addEventListener("DOMContentLoaded", () => {
+			const hostSelector = document.getElementById("test-host-id");
+			if (hostSelector) {
+				hostSelector.addEventListener("change", syncProductOptions);
+				syncProductOptions();
+			}
+		});
+	</script>
 </head>
 <body>
-	<h1>host-rutebayar self hosted</h1>
-	<p>Monitoring dan registrasi sederhana untuk host, produk, dan pembayaran.</p>
-	<div class="section">
-	<h2>Hosts</h2>
-		<table>
-			<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
-			{{range .Hosts}}
-			<tr>
-				<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
-				<td>{{.Name}}</td>
-				<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
-				<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
-			</tr>
-			{{else}}
-			<tr><td colspan="4">Belum ada host terdaftar.</td></tr>
-			{{end}}
-		</table>
-	</div>
-	<div class="section">
-		<h2>Products</h2>
-		<table>
-			<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
-			{{range .Products}}
-			<tr>
-				<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
-				<td>{{.HostID}}</td>
-				<td>{{.Name}}</td>
-				<td>{{.SKU}}</td>
-				<td>{{.Price}}</td>
-				<td>{{.IsActive}}</td>
-				<td>{{if .FeePolicyOverride}}yes{{else}}no{{end}}</td>
-			</tr>
-			{{else}}
-			<tr><td colspan="7">Belum ada produk terdaftar.</td></tr>
-			{{end}}
-		</table>
-	</div>
-	<div class="section">
-		<h2>Orders</h2>
-		<table>
-			<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
-			{{range .Orders}}
-			<tr>
-				<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
-				<td>{{.Status}}</td>
-				<td>{{.HostID}}</td>
-				<td>{{.ProductID}}</td>
-				<td>{{.Provider}}</td>
-				<td>{{.GrossAmount}}</td>
-				<td>{{.HostFeeAmount}}</td>
-				<td>{{.NetAmount}}</td>
-				<td><a href="{{.ProviderCheckoutURL}}">{{if .ProviderCheckoutURL}}open{{else}}-{{end}}</a></td>
-			</tr>
-			{{else}}
-			<tr><td colspan="9">Belum ada order.</td></tr>
-			{{end}}
-		</table>
-	</div>
+	<main>
+		<div class="top-actions">
+			<h1>host-rutebayar self-hosted</h1>
+			<div><a href="/ui/callbacks">Callback Monitor</a></div>
+		</div>
+		<p class="subtle">Akses UI lokal dari browser untuk registrasi host, produk, provider account, policy, serta smoke test.</p>
+		<div id="action-result" class="msg"></div>
+		<div class="section">
+			<h2>1) Quick bootstrap</h2>
+			<button type="button" onclick="seedDemo(event)" class="small-btn">Seed demo data</button>
+			<pre id="seed-output"></pre>
+		</div>
+		<div class="grid">
+			<section class="section">
+				<h2>2) Register Host</h2>
+				<form onsubmit="submitHost(event)">
+					<label>ID
+						<input id="host-id" required />
+					</label>
+					<label>Nama
+						<input id="host-name" required />
+					</label>
+					<label>Notification Key
+						<input id="host-notification-key" required />
+					</label>
+					<label>Host Secret
+						<input id="host-secret" required />
+					</label>
+					<label>Webhook Secret
+						<input id="host-webhook-secret" required />
+					</label>
+					<label>Callback URLs (pisahkan dengan koma)
+						<textarea id="host-callback-urls">https://example.com/callback</textarea>
+					</label>
+					<label>Callback Allowlist (pisahkan dengan koma)
+						<textarea id="host-callback-allowlist">https://example.com</textarea>
+					</label>
+					<button type="submit">Create Host</button>
+				</form>
+			</section>
+			<section class="section">
+				<h2>3) Register Product</h2>
+				<form onsubmit="submitProduct(event)">
+					<label>Host
+						<select id="product-host-id" required>
+							<option value="">Pilih Host</option>
+							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+						</select>
+					</label>
+					<label>Host Secret
+						<input id="product-host-secret" type="password" required />
+					</label>
+					<label>Product ID
+						<input id="product-id" required />
+					</label>
+					<label>Nama Produk
+						<input id="product-name" required />
+					</label>
+					<label>SKU
+						<input id="product-sku" required />
+					</label>
+					<label>Harga (integer)
+						<input id="product-price" type="number" min="0" step="1" required />
+					</label>
+					<label>Meta JSON (opsional)
+						<textarea id="product-meta">{}</textarea>
+					</label>
+					<label>Fee Policy Override JSON (opsional)
+						<textarea id="product-fee-override"></textarea>
+					</label>
+					<label style="display:flex; align-items:center; gap:8px;">
+						<input id="product-active" type="checkbox" checked />
+						<span>Is Active</span>
+					</label>
+					<button type="submit">Create Product</button>
+				</form>
+			</section>
+		</div>
+		<div class="grid">
+			<section class="section">
+				<h2>4) Register Provider Account</h2>
+				<form onsubmit="submitProviderAccount(event)">
+					<label>Host
+						<select id="provider-host-id" required>
+							<option value="">Pilih Host</option>
+							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+						</select>
+					</label>
+					<label>Host Secret
+						<input id="provider-host-secret" type="password" required />
+					</label>
+					<label>Provider
+						<input id="provider-name" value="midtrans" required />
+					</label>
+					<label>Environment
+						<input id="provider-env" value="sandbox" />
+					</label>
+					<label>Credentials Hash
+						<input id="provider-credentials" required />
+					</label>
+					<label>Public Config JSON (opsional)
+						<textarea id="provider-config"></textarea>
+					</label>
+					<button type="submit">Register Account</button>
+				</form>
+			</section>
+			<section class="section">
+				<h2>5) Host Policy</h2>
+				<form onsubmit="submitHostPolicy(event)">
+					<label>Host
+						<select id="policy-host-id" required>
+							<option value="">Pilih Host</option>
+							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+						</select>
+					</label>
+					<label>Host Secret
+						<input id="policy-host-secret" type="password" required />
+					</label>
+					<label>Type
+						<select id="policy-type">
+							<option value="percent">percent</option>
+							<option value="fixed">fixed</option>
+							<option value="free">free</option>
+						</select>
+					</label>
+					<label>Value
+						<input id="policy-value" type="number" step="0.1" value="2" required />
+					</label>
+					<label>Currency
+						<input id="policy-currency" value="IDR" />
+					</label>
+					<label>Rounding
+						<input id="policy-rounding" value="nearest" />
+					</label>
+					<label>Min Fee (opsional)
+						<input id="policy-min-fee" type="number" />
+					</label>
+					<label>Max Fee (opsional)
+						<input id="policy-max-fee" type="number" />
+					</label>
+					<label>Policy Version
+						<input id="policy-version" value="v1" />
+					</label>
+					<button type="submit">Set Policy</button>
+				</form>
+			</section>
+		</div>
+		<div class="section">
+			<h2>6) Test Payment</h2>
+			<form onsubmit="createTestPayment(event)">
+				<div class="grid">
+					<label>Host
+						<select id="test-host-id" required>
+							<option value="">Pilih Host</option>
+							{{range .Hosts}}<option value="{{.ID}}">{{.ID}}</option>{{end}}
+						</select>
+					</label>
+					<label>Product
+						<select id="test-product-id" required>
+							<option value="">Pilih Product</option>
+							{{range .Products}}<option value="{{.ID}}" data-host="{{.HostID}}">{{.ID}}</option>{{end}}
+						</select>
+					</label>
+					<label>Env
+						<input id="test-env" value="sandbox" />
+					</label>
+					<label>Buyer Ref
+						<input id="test-buyer-ref" />
+					</label>
+				</div>
+				<button type="submit">Create test payment</button>
+			</form>
+			<pre id="test-output"></pre>
+		</div>
+		<div class="section">
+			<h2>Hosts</h2>
+			<table>
+				<tr><th>ID</th><th>Nama</th><th>Callback URL</th><th>Allowlist</th></tr>
+				{{range .Hosts}}
+				<tr>
+					<td><a href="/ui/host/{{.ID}}">{{.ID}}</a></td>
+					<td>{{.Name}}</td>
+					<td><pre>{{range .CallbackURLs}}{{.}} {{end}}</pre></td>
+					<td><pre>{{range .CallbackAllowlist}}{{.}} {{end}}</pre></td>
+				</tr>
+				{{else}}
+				<tr><td colspan="4">Belum ada host terdaftar.</td></tr>
+				{{end}}
+			</table>
+		</div>
+		<div class="section">
+			<h2>Products</h2>
+			<table>
+				<tr><th>ID</th><th>Host ID</th><th>Nama</th><th>SKU</th><th>Harga</th><th>Active</th><th>Policy Override</th></tr>
+				{{range .Products}}
+				<tr>
+					<td><a href="/ui/product/{{.ID}}">{{.ID}}</a></td>
+					<td>{{.HostID}}</td>
+					<td>{{.Name}}</td>
+					<td>{{.SKU}}</td>
+					<td>{{.Price}}</td>
+					<td>{{.IsActive}}</td>
+					<td>{{if .FeePolicyOverride}}yes{{else}}no{{end}}</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="7">Belum ada produk terdaftar.</td></tr>
+				{{end}}
+			</table>
+		</div>
+		<div class="section">
+			<h2>Orders</h2>
+			<table>
+				<tr><th>Reference</th><th>Status</th><th>Host</th><th>Product</th><th>Provider</th><th>Gross</th><th>Host Fee</th><th>Net</th><th>Checkout URL</th></tr>
+				{{range .Orders}}
+				<tr>
+					<td><a href="/ui/order/{{.Reference}}">{{.Reference}}</a></td>
+					<td>{{.Status}}</td>
+					<td>{{.HostID}}</td>
+					<td>{{.ProductID}}</td>
+					<td>{{.Provider}}</td>
+					<td>{{.GrossAmount}}</td>
+					<td>{{.HostFeeAmount}}</td>
+					<td>{{.NetAmount}}</td>
+					<td><a href="{{.ProviderCheckoutURL}}">{{if .ProviderCheckoutURL}}open{{else}}-{{end}}</a></td>
+				</tr>
+				{{else}}
+				<tr><td colspan="9">Belum ada order.</td></tr>
+				{{end}}
+			</table>
+		</div>
+	</main>
 </body>
 </html>`
 
@@ -701,6 +1362,7 @@ const uiHostHTML = `<!doctype html>
 </head>
 <body>
 	<a href="/ui">← Dashboard</a>
+	<a href="/ui/callbacks">Lihat callback monitor</a>
 	<div class="section">
 		<h1>Host {{.Host.ID}}</h1>
 		<table>
@@ -747,6 +1409,22 @@ const uiHostHTML = `<!doctype html>
 			</tr>
 			{{else}}
 			<tr><td colspan="7">Belum ada order.</td></tr>
+			{{end}}
+		</table>
+	</div>
+	<div class="section">
+		<h2>Provider Accounts</h2>
+		<table>
+			<tr><th>Provider</th><th>Env</th><th>Credentials Hash</th><th>Public Config</th></tr>
+			{{range .Accounts}}
+			<tr>
+				<td>{{.Provider}}</td>
+				<td>{{.Env}}</td>
+				<td><pre>{{.CredentialsHash}}</pre></td>
+				<td><pre>{{printf "%#v" .PublicConfig}}</pre></td>
+			</tr>
+			{{else}}
+			<tr><td colspan="4">Belum ada provider account.</td></tr>
 			{{end}}
 		</table>
 	</div>
@@ -841,6 +1519,94 @@ const uiOrderHTML = `<!doctype html>
 		{{else}}
 		<p>Ledger not found yet.</p>
 		{{end}}
+	</div>
+</body>
+</html>`
+
+const uiCallbacksHTML = `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Callback monitor</title>
+	<style>
+		body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #11293f; background: #f2f8ff; }
+		table { border-collapse: collapse; width: 100%; }
+		td, th { border: 1px solid #c8d7e4; padding: 8px; text-align: left; vertical-align: top; }
+		th { background: #12345c; color: #fff; }
+		.section { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 8px 20px rgba(8, 30, 54, 0.08); }
+		a { color: #1a4f84; }
+		.row-result { font-family: monospace; white-space: pre-wrap; }
+		button { cursor: pointer; border: 0; background: #1b4b84; color: #fff; border-radius: 6px; padding: 6px 10px; }
+		button:disabled { opacity: 0.5; cursor: not-allowed; }
+		pre { background: #f8fcff; border: 1px solid #cfdce8; padding: 6px; }
+		.ok { color: #146c2e; }
+		.bad { color: #7f1d1d; }
+	</style>
+	<script>
+		async function replay(reference, provider, status, idempotencyKey, buttonRef) {
+			if (!reference || !provider || !status || !idempotencyKey) {
+				alert("reference, provider, status, dan idempotency_key wajib ada.");
+				return;
+			}
+			buttonRef.disabled = true;
+			try {
+				const res = await fetch("/ui/callbacks/replay", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						reference,
+						provider,
+						status,
+						idempotency_key: idempotencyKey,
+					}),
+				});
+				const text = await res.text();
+				let payload = text;
+				try {
+					payload = JSON.parse(text);
+					payload = JSON.stringify(payload);
+				} catch (_e) {}
+				if (!res.ok) {
+					alert("Replay gagal: " + payload);
+					buttonRef.disabled = false;
+					return;
+				}
+				alert("Replay sukses: " + payload);
+				location.reload();
+			} catch (err) {
+				alert("Replay gagal: " + err);
+				buttonRef.disabled = false;
+			}
+		}
+	</script>
+</head>
+<body>
+	<div class="section">
+		<h1>Callback delivery monitor</h1>
+		<p><a href="/ui">← Dashboard</a></p>
+		<table>
+			<tr><th>At</th><th>Reference</th><th>Provider</th><th>Status</th><th>Result</th><th>Idempotency</th><th>Attempts</th><th>Error</th><th>Action</th></tr>
+			{{range .Deliveries}}
+			<tr>
+				<td>{{.At}}</td>
+				<td>{{.Reference}}</td>
+				<td>{{.Provider}}</td>
+				<td>{{.Status}}</td>
+				<td class="{{if eq .Result "failed"}}bad{{else}}ok{{end}}">{{.Result}}</td>
+				<td>{{.IdempotencyKey}}</td>
+				<td>{{.Attempts}}</td>
+				<td class="row-result">{{.Error}}</td>
+				<td>
+					<button
+						onclick="replay('{{.Reference}}', '{{.Provider}}', '{{.Status}}', '{{.IdempotencyKey}}', this)"
+						{{if or (eq .Reference "") (eq .Provider "") (eq .Status "") (eq .IdempotencyKey "")}}disabled{{end}}
+					>Replay</button>
+				</td>
+			</tr>
+			{{else}}
+			<tr><td colspan="9">Belum ada callback masuk.</td></tr>
+			{{end}}
+		</table>
 	</div>
 </body>
 </html>`

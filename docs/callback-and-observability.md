@@ -33,6 +33,7 @@
 - DLQ drain log saat retry/reconciliate gagal.
 - Monitoring puncak latency: waktu dari `create` sampai webhook success.
 - Audit log: create-payment, webhook success, reconcile status, dan callback failure.
+- Dashboard callback delivery: `/ui/callbacks` menampilkan success/failure log dan tombol replay manual.
 
 ## Playbook alert
 

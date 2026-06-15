@@ -31,6 +31,16 @@ Akses:
 
 ## 4. Inisialisasi data (minimal)
 
+Untuk demo cepat dari browser:
+
+```bash
+curl -X POST http://127.0.0.1:18123/admin/demo-seed \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Atau buat manual:
+
 ```bash
 curl -X POST http://127.0.0.1:18123/register/host \
   -H "Content-Type: application/json" \
@@ -60,6 +70,8 @@ Lalu cek status dengan `reference` dari response.
 
 ## 6. Operasional harian
 
+- Pantau dashboard operasional di `http://127.0.0.1:18123/ui`.
+- Pantau callback monitor/retry di `http://127.0.0.1:18123/ui/callbacks`.
 - Pantau `go test ./...` di setiap perubahan.
 - Backup DB secara berkala (contoh `cp host-rutebayar.db host-rutebayar.db.$(date +%F_%H%M%S)`).
 - Restart service saat merubah credential policy/akun host.
