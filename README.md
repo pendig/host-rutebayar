@@ -24,7 +24,20 @@ Repo ini ditujukan untuk membuat model seperti ini:
   - `fixed` (contoh: `Rp 1.000`)
   - `free` (`0`, tidak dipungut fee)
 - Fee diproses dari nominal pembayaran sesuai rounding policy yang didokumentasikan (mis. 0 desimal untuk IDR).
+- Policy bisa pakai `min_fee`, `max_fee`, dan `currency`; dan boleh dipakai sebagai
+  `free` untuk produk tertentu.
 - Fee bukan domain `rute-bayar`; host-rutebayar sebagai orchestrator menentukan net amount yang diteruskan ke host website/merchant.
+
+## Fee policy snapshot & settlement
+
+- Saat payment dibuat, host-rutebayar mengambil snapshot `fee_policy` + `fee_version`.
+- Snapshot disimpan di `PaymentOrder` agar fee tidak berubah saat transaksi berlangsung.
+- Hasil kalkulasi (gross/fee/net) tetap immutable di `PaymentOrder` untuk kebutuhan audit.
+- Data settlement diekspor sebagai ledger line:
+  - `gross_amount`
+  - `provider_fee_amount`
+  - `host_fee_amount`
+  - `net_amount`
 
 ## Scope awal (v0)
 
@@ -60,9 +73,18 @@ Repo ini ditujukan untuk membuat model seperti ini:
 - Data pembeli dienkripsi-at-rest.
 - Semua webhook diverifikasi signature/hmac provider terlebih dahulu.
 - Enkripsi payload callback ke website host (atau signed payload + expiry).
+- Callback host dibatasi ke allowlist endpoint & signature HMAC per-host + timestamp/nonce.
 - Idempotency untuk webhook (mencegah double-processing).
 - Audit log untuk create/payment/webhook events.
 - Fee policy diverifikasi dan ditandatangani agar tidak bisa diubah di sisi client selama transaksinya.
+
+## Integrasi dan paket SDK
+
+- `host-rutebayar`:
+  - menyediakan endpoint API publik `host-rutebayar` untuk registrasi host, produk, pembayaran.
+  - menyediakan SDK (opsional versi awal) untuk integrasi website host.
+- `rute-bayar` tetap memegang adapter provider (Xendit/Midtrans/Doku/IPaymu).
+- Callback host dan signature logic dikelola agar website host tidak perlu menyentuh detail gateway.
 
 ## Rencana kerja
 
