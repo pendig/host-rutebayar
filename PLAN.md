@@ -74,9 +74,9 @@
   - `host-rutebayar` = orchestrator & registry.
   - `rute-bayar` = adapter/payment-router/utility.
 - [ ] Implement SDK client library (minimal API wrapper).
-- [ ] `Phase 0..4` diperkaya oleh OpenAPI proxy dari `rute-bayar`:
-  - gunakan `internal/api/openapi.yaml` sebagai contract primer.
-  - endpoint host-facing minimal: `/host/{id}/payments` -> `rute-bayar /api/v1/payments`.
-  - endpoint status/check: `/host/{id}/payments/{reference}` -> `rute-bayar /api/v1/payments/{reference}`.
-  - endpoint callback fanout: `rute-bayar webhook` event replay + host-specific enrichment.
+- [ ] Implement OpenAPI proxy layer in Phase 5 using `rute-bayar` contract:
+  - source of truth: `internal/api/openapi.yaml`.
+  - forward create flow `/host/{id}/payments` -> `rute-bayar /api/v1/payments`.
+  - forward status flow `/host/{id}/payments/{reference}` -> `rute-bayar /api/v1/payments/{reference}`.
+  - replay webhook event dari rute-bayar, enrich host detail, lalu fanout ke callback host.
 - [ ] Canary + sandbox test + dokumentasi onboarding host.
