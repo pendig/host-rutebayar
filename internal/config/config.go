@@ -15,6 +15,7 @@ type Config struct {
 	Host    string
 	Timeout time.Duration
 	DBDSN   string
+	UpstreamURL string
 }
 
 // Load reads environment config used by all phases.
@@ -25,6 +26,7 @@ func Load() Config {
 		Port:    getEnvInt("HOST_RUTEBAYAR_PORT", 8080),
 		Timeout: getEnvDuration("HOST_RUTEBAYAR_TIMEOUT", 10*time.Second),
 		DBDSN:   getEnv("HOST_RUTEBAYAR_DATABASE_DSN", "file:host-rutebayar.db?_pragma=foreign_keys(ON)"),
+		UpstreamURL: getEnv("HOST_RUTEBAYAR_UPSTREAM_BASE_URL", ""),
 	}
 }
 

@@ -3,11 +3,13 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/pendig/host-rutebayar/internal/config"
 	"github.com/pendig/host-rutebayar/internal/gateway"
 	httphandlers "github.com/pendig/host-rutebayar/internal/http"
 	"github.com/pendig/host-rutebayar/internal/orchestration"
+	"github.com/pendig/host-rutebayar/internal/proxy"
 	"github.com/pendig/host-rutebayar/internal/storage"
 )
 
@@ -25,11 +27,19 @@ func main() {
 	}
 
 	orchestrator := orchestration.NewOrchestratorWithStore(store, gateway.DefaultGateway())
-	mux := httphandlers.SetupMux(orchestrator)
+	serviceMux := httphandlers.SetupMux(orchestrator)
+	appMux := serviceMux
+	if strings.TrimSpace(cfg.UpstreamURL) != "" {
+		router := http.NewServeMux()
+		router.Handle("/host/", proxy.NewOpenAPIProxy(cfg.UpstreamURL))
+		router.Handle("/", serviceMux)
+		appMux = router
+	}
+
 	addr := cfg.ListenAddress()
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           appMux,
 		ReadHeaderTimeout: cfg.Timeout,
 		ReadTimeout:       cfg.Timeout,
 		WriteTimeout:      cfg.Timeout,
