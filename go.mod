@@ -1,6 +1,6 @@
 module github.com/pendig/host-rutebayar
 
-go 1.24.0
+go 1.25.11
 
 require modernc.org/sqlite v1.39.1
 
