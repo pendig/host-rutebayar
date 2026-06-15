@@ -80,3 +80,22 @@
   - forward status flow `/host/{id}/payments/{reference}` -> `rute-bayar /api/v1/payments/{reference}`.
   - replay webhook event dari rute-bayar, enrich host detail, lalu fanout ke callback host.
 - [ ] Canary + sandbox test + dokumentasi onboarding host.
+
+## Phase 6 - Self-hosted Foundation (Registry & Persistence)
+
+- [x] Implementasi registrasi host/product/provider-policy melalui handler yang tersimpan di SQLite.
+- [x] Integrasi handler orchestrator dengan storage sqlite untuk data host/prod/akun/provider/order.
+- [x] Implementasi koneksi gateway adapter + event lifecycle minimal.
+- [x] Dashboard self-hosted sederhana menampilkan daftar host, produk, dan order.
+
+## Phase 7 - Host-scoped API Integration
+
+- [x] Tambah route `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` agar `/host/{host_id}/...` bisa diproksi ke kontrak rute-bayar.
+- [x] Routing runtime otomatis mount prefix `/host/` ke `internal/proxy` bila upstream diset.
+- [x] Update OpenAPI agar mencakup endpoint `register` + host-scoped path.
+
+## Phase 8 - Operasional dan Acceptance
+
+- [ ] Lengkapi runbook self-hosted (env, migrate, start, cek kesehatan).
+- [ ] Tambahkan contoh integrasi callback/enkripsi + observability checklist.
+- [ ] Pastikan acceptance criteria per-fase sudah terdokumentasi di satu file.
