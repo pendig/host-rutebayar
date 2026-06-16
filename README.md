@@ -12,8 +12,9 @@ Repo ini ditujukan untuk membuat model seperti ini:
 - Host mengatur environment `sandbox` dan `production`.
 - Saat ada pembayaran, host-bayar/website membuat transaksi melalui host-rutebayar.
 - host-rutebayar menyimpan mapping pesanan dan membangun request ke gateway.
-- Data pembeli (buyer) tetap dienkripsi dan tidak dipakai untuk kebutuhan internal gateway langsung.
-- Webhook dari gateway diverifikasi, lalu diteruskan terenkripsi ke website host sesuai produk.
+- Data pembeli (buyer) hanya digunakan untuk kebutuhan alur pembayaran dan pencatatan internal order.
+- Webhook dari gateway diverifikasi, lalu direkonsiliasi ke status order internal.
+- Pengiriman callback ke website host dari service ini belum disertakan pada fase ini; alur fanout host ditangani pada fase lanjutan.
 
 ## Model fee host
 
@@ -39,29 +40,27 @@ Repo ini ditujukan untuk membuat model seperti ini:
   - `host_fee_amount`
   - `net_amount`
 
-## Reuse OpenAPI rute-bayar untuk MVP cepat
+## Kontrak API dan integrasi
 
-- Repo `rute-bayar` sudah punya kontrak API yang bisa langsung dipakai:
-  - `internal/api/openapi.yaml`
-  - `docs/api-spec.md` (ringkasan endpoint)
-- Untuk MVP, host-bayar bisa menjadi layer orchestrator, bukan builder adapter provider:
-  - maintain policy+tenant di `host-rutebayar`,
-  - forward request invoice/payment ke endpoint daemon rute-bayar (`POST /api/v1/payments`, `GET /api/v1/payments/{reference}`, `GET /api/v1/payments/{reference}/status`),
-  - biarkan daemon rute-bayar menerima/verifikasi webhook dan `Forwarding` event,
-  - host-bayar menambahkan enrich (policy/fee) lalu push callback terenkripsi ke website host.
-- Pendekatan ini cocok untuk MVP karena rute-bayar sudah punya endpoint dasar + proof create->webhook->reconcile.
+Kontrak API operasional service ini berada di:
+- `internal/api/openapi.yaml`
 
-## Scope awal (v0)
+Integrasi dengan `rute-bayar` saat ini:
+- `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` dapat dipakai untuk route `host-scoped` ke daemon rute-bayar.
+- `POST /host/{host_id}/payments` dan `GET /host/{host_id}/payments/{reference}` diproksi ke endpoint upstream `rute-bayar` bila dikonfigurasi.
+- Rekonsiliasi webhook dilakukan di `host-rutebayar` untuk menjaga state order dan ledger.
 
-- Repository ini difokuskan untuk desain data & API agar review ide sebelum implementasi penuh.
+## Scope saat ini (fase 6-8)
+
+- Repository ini fokus pada orchestrasi host+produk+policy, lifecycle pembayaran, dan operasional self-hosted.
 - Bukan implementasi gateway baru—gateway tetap di handle di layer `rute-bayar` (existing).
-- Fokus awal: model tenant/produk/produk-aktif-host + orchestrator alur pembayaran + event router webhook.
+- Fokus saat ini: registrasi tenant/product/provider, pembuatan payment, webhook reconcile, dan dashboard observability.
 
 ## Nilai tambah dibandingkan langsung pakai gateway
 
 - Host bisa punya banyak produk + aturan sendiri.
 - Onboarding gateway per-host dapat dikelola secara independen.
-- Integrasi website host lebih konsisten karena cukup pakai SDK/endpoint dari host-rutebayar.
+- Integrasi website host lebih konsisten karena bisa memakai endpoint host-rutebayar yang terstandar.
 - Audit + routing webhook lebih terpusat.
 
 ## Alur kasar
@@ -71,8 +70,8 @@ Repo ini ditujukan untuk membuat model seperti ini:
 3. host-rutebayar membuat intent internal + memilih provider sesuai policy host/product.
 4. host-rutebayar memanggil provider (via wrapper adapter) untuk mendapatkan URL/payment reference.
 5. Webhook provider masuk ke host-rutebayar, diverifikasi, lalu dibaca dari mapping.
-6. host-rutebayar mengirimkan event terenkripsi ke endpoint callback website host.
-7. host-rutebayar memproses fee sesuai policy host/product, lalu event final disertakan detail komisi dan gross/net amount.
+6. host-rutebayar menyimpan status final + ledger untuk observability operasional.
+7. host-rutebayar memproses fee sesuai policy host/product, lalu event final tersimpan bersama detail komisi dan gross/net amount.
 
 ## Konsep environment
 
@@ -82,7 +81,7 @@ Repo ini ditujukan untuk membuat model seperti ini:
 ## Login dashboard
 
 Dashboard operasi di `/ui` akan mengarahkan ke `/ui/login` jika belum autentikasi.
-Default password login adalah `admin123`, namun sebaiknya diganti lewat:
+Default password login fallback `admin123` untuk local development, tetapi untuk non-local/prod harus diganti lewat:
 
 - `HOST_RUTEBAYAR_ADMIN_PASSWORD`
 
@@ -96,32 +95,76 @@ Catatan keamanan: jangan pernah hardcode password ini ke source/docs publik.
 - `HOST_RUTEBAYAR_TIMEOUT` (default `10s`)
 - `HOST_RUTEBAYAR_DATABASE_DSN` (default `file:host-rutebayar.db?_pragma=foreign_keys(ON)`)
 - `HOST_RUTEBAYAR_UPSTREAM_BASE_URL` (opsional) — saat diisi, path `/host/{id}/payments...` akan diproksi ke upstream rute-bayar (`/api/v1/...`).
-- `HOST_RUTEBAYAR_ADMIN_PASSWORD` (default `admin123`) — password login untuk dashboard.
+- `HOST_RUTEBAYAR_ADMIN_PASSWORD` — password login untuk dashboard (opsional di local dev, wajib di non-local/prod).
 
-## Security checklist awal
+## Security checklist fase 6-8
 
 - `host_secret` dan `webhook_secret` wajib unik per-host.
-- Data pembeli dienkripsi-at-rest.
-- Semua webhook diverifikasi signature/hmac provider terlebih dahulu.
-- Enkripsi payload callback ke website host (atau signed payload + expiry).
-- Callback host dibatasi ke allowlist endpoint & signature HMAC per-host + timestamp/nonce.
-- Idempotency untuk webhook (mencegah double-processing).
+- Semua webhook diverifikasi signature/idempotency terlebih dahulu.
+- Rekonsiliasi webhook menghasilkan status/order/ledger yang terukur.
+- Idempotency pada webhook untuk mencegah double-processing.
 - Audit log untuk create/payment/webhook events.
-- Fee policy diverifikasi dan ditandatangani agar tidak bisa diubah di sisi client selama transaksinya.
+- Fee policy dipertahankan konsisten selama transaksi untuk mencegah drift perhitungan.
 
 ## Integrasi dan paket SDK
 
 - `host-rutebayar`:
-  - menyediakan endpoint API publik `host-rutebayar` untuk registrasi host, produk, pembayaran.
-  - menyediakan SDK (opsional versi awal) untuk integrasi website host.
+  - menyediakan endpoint API untuk registrasi host, produk, policy, dan pembayaran.
+  - menyediakan dashboard self-hosted `/ui` untuk monitoring operasional.
 - `rute-bayar` tetap memegang adapter provider (Xendit/Midtrans/Doku/IPaymu).
-- Callback host dan signature logic dikelola agar website host tidak perlu menyentuh detail gateway.
+- Callback host outbound dan pengiriman ke URL host belum aktif pada fase ini.
 
-## Rencana kerja
+## Struktur Direktori
 
-Lihat `PLAN.md`.
+Berikut adalah struktur utama dari codebase project ini:
 
-## Status
+* `cmd/host-rutebayar/`: Entry point utama aplikasi.
+* `api/openapi.yaml`: Kontrak spesifikasi API OpenAPI.
+* `docs/`: Dokumentasi teknis, runbook operasional, dan kriteria penerimaan.
+* `internal/`: Logika internal aplikasi (tidak dapat di-import oleh package luar).
+  * `api/`: REST API Controllers/Handlers (registrasi host, produk, provider, dll.).
+  * `config/`: Parser dan validator konfigurasi runtime.
+  * `domain/`: Model data/entitas inti (`Host`, `Product`, `PaymentOrder`, dll.).
+  * `gateway/`: Abstraksi provider gateway.
+  * `http/`: Router HTTP, middleware, UI dashboard admin, dan static assets.
+  * `observability/`: Logging, metrik audit trail, dan alert thresholds.
+  * `orchestration/`: Kalkulasi fee, intent matching, settlement, dan ledger.
+  * `proxy/`: Proxy layer untuk mem-forward request host-scoped ke upstream `rute-bayar`.
+  * `security/`: Verifikasi signature webhook, kriptografi kunci, dan otentikasi dashboard.
+  * `storage/`: Database access layer SQLite dan migrasi schema.
 
-- Inisialisasi repo dan dokumentasi ide + rencana.
-- Menunggu review PR sebelum implementasi lanjut.
+## Memulai Pengembangan (Getting Started)
+
+### Prasyarat
+- Go 1.23+
+- SQLite3 (driver database tertanam otomatis)
+
+### Menjalankan Unit Test
+Semua kontribusi kode wajib lolos pengujian unit test. Jalankan test suite dengan perintah berikut:
+```bash
+go test -v ./...
+```
+
+### Menjalankan Aplikasi Secara Lokal
+1. Build binary aplikasi:
+   ```bash
+   go build -o host-rutebayar ./cmd/host-rutebayar
+   ```
+2. Jalankan binary dengan konfigurasi default:
+   ```bash
+   ./host-rutebayar
+   ```
+3. Akses dashboard di browser pada `http://127.0.0.1:18123/ui` (password login default: `admin123`).
+
+Untuk petunjuk operasional dan skrip seeding lengkap, silakan merujuk ke [Self-hosted Runbook](docs/runbook.md).
+
+## Rencana Kerja & Status
+
+- Detail peta jalan proyek dapat dilihat di [PLAN.md](PLAN.md).
+- Status saat ini: Fase 6-8 telah selesai diimplementasikan (registrasi host/product/provider, payment flow, webhook reconcile, dashboard, dan runbook).
+- Operasional lanjutan difokuskan ke hardening dan callback fanout host outbound.
+
+## Kontribusi & Lisensi
+
+- Kontribusi baru sangat kami hargai. Silakan baca [CONTRIBUTING.md](CONTRIBUTING.md) sebelum mengirimkan Pull Request.
+- Project ini dilisensikan di bawah [MIT License](LICENSE).
