@@ -102,7 +102,7 @@ Catatan keamanan: jangan pernah hardcode password ini ke source/docs publik.
 - `host_secret` dan `webhook_secret` wajib unik per-host.
 - Semua webhook diverifikasi signature/idempotency terlebih dahulu.
 - Rekonsiliasi webhook menghasilkan status/order/ledger yang terukur.
-- Idempotency untuk webhook untuk mencegah double-processing.
+- Idempotency pada webhook untuk mencegah double-processing.
 - Audit log untuk create/payment/webhook events.
 - Fee policy dipertahankan konsisten selama transaksi untuk mencegah drift perhitungan.
 
@@ -168,4 +168,3 @@ Untuk petunjuk operasional dan skrip seeding lengkap, silakan merujuk ke [Self-h
 
 - Kontribusi baru sangat kami hargai. Silakan baca [CONTRIBUTING.md](CONTRIBUTING.md) sebelum mengirimkan Pull Request.
 - Project ini dilisensikan di bawah [MIT License](LICENSE).
-
